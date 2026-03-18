@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twitch Lamp Controller</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="setup-screen" class="screen hidden">
+    <div class="setup-card">
+      <h1>Twitch Lamp Controller</h1>
+      <p class="subtitle">Einfaches Setup für WLED, Govee und Twitch.</p>
+
+      <div class="wizard-box">
+        <h3>1. Twitch App Daten eintragen</h3>
+        <label>Client ID<input id="setup-client-id" placeholder="aus dev.twitch.tv"></label>
+        <label>Client Secret<input id="setup-client-secret" type="password" placeholder="aus dev.twitch.tv"></label>
+        <p class="help">Redirect URI für Twitch: <code id="redirect-uri">-</code></p>
+        <button class="btn btn-primary btn-full" id="save-app-btn">Twitch App speichern</button>
+      </div>
+
+      <div class="wizard-box">
+        <h3>2. Mit Twitch verbinden</h3>
+        <p class="help">Danach kannst du Streamer, Lampen und Chat-Regeln anlegen.</p>
+        <button class="btn btn-primary btn-full" id="oauth-btn">Mit Twitch verbinden</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="app" class="screen hidden">
+    <aside class="sidebar">
+      <div class="logo">💡 Twitch Lamp</div>
+      <nav>
+        <a href="#" class="nav-link active" data-tab="dashboard">Dashboard</a>
+        <a href="#" class="nav-link" data-tab="lamps">Lampen</a>
+        <a href="#" class="nav-link" data-tab="streamers">Streamer</a>
+        <a href="#" class="nav-link" data-tab="online-rules">Online-Szenen</a>
+        <a href="#" class="nav-link" data-tab="chat-rules">Chat-Regeln</a>
+        <a href="#" class="nav-link" data-tab="settings">Einstellungen</a>
+        <a href="#" class="nav-link" data-tab="logs">Logs</a>
+      </nav>
+      <div class="sidebar-footer"><span id="twitch-status">🔴 Nicht verbunden</span></div>
+    </aside>
+
+    <main class="content">
+      <section id="tab-dashboard" class="tab active">
+        <h2>Dashboard</h2>
+        <div class="stats-grid">
+          <div class="stat-card"><span>Live</span><strong id="stat-live">0</strong></div>
+          <div class="stat-card"><span>Lampen</span><strong id="stat-lamps">0</strong></div>
+          <div class="stat-card"><span>Aktive Chat-Regel</span><strong id="stat-chat">-</strong></div>
+          <div class="stat-card"><span>Rotation</span><strong id="stat-rotation">-</strong></div>
+        </div>
+        <div class="panel">
+          <h3>Live Streamer</h3>
+          <div id="live-streamers" class="chips"></div>
+        </div>
+        <div class="panel">
+          <h3>Lampenstatus</h3>
+          <div id="lamp-status" class="card-list"></div>
+        </div>
+      </section>
+
+      <section id="tab-lamps" class="tab">
+        <div class="section-head"><h2>Lampen</h2><button class="btn btn-primary" onclick="openModal('lamp-modal')">Lampe hinzufügen</button></div>
+        <div id="lamp-list" class="card-list"></div>
+      </section>
+
+      <section id="tab-streamers" class="tab">
+        <div class="section-head"><h2>Streamer</h2><button class="btn btn-primary" onclick="openModal('streamer-modal')">Streamer hinzufügen</button></div>
+        <div id="streamer-list" class="card-list"></div>
+      </section>
+
+      <section id="tab-online-rules" class="tab">
+        <div class="section-head"><h2>Online-Szenen</h2><button class="btn btn-primary" onclick="openModal('online-rule-modal')">Online-Szene hinzufügen</button></div>
+        <p class="help">Diese Szene wird angezeigt, wenn der Streamer live ist. Bei mehreren Live-Streamern wird rotiert.</p>
+        <div id="online-rule-list" class="card-list"></div>
+      </section>
+
+      <section id="tab-chat-rules" class="tab">
+        <div class="section-head"><h2>Chat-Regeln</h2><button class="btn btn-primary" onclick="openModal('chat-rule-modal')">Chat-Regel hinzufügen</button></div>
+        <p class="help">Eine Regel wird aktiv, wenn ein Text oft genug in einem Zeitfenster erkannt wurde. Sie bleibt aktiv, solange weiter genug Treffer da sind.</p>
+        <div id="chat-rule-list" class="card-list"></div>
+      </section>
+
+      <section id="tab-settings" class="tab">
+        <h2>Einstellungen</h2>
+        <div class="panel form-grid">
+          <label>Online Polling (Sek.)<input id="setting-online-poll" type="number" min="10"></label>
+          <label>Rotation (Sek.)<input id="setting-rotation" type="number" min="5"></label>
+          <label>Healthcheck (Sek.)<input id="setting-health" type="number" min="10"></label>
+          <div class="actions-row"><button class="btn btn-primary" id="save-settings-btn">Speichern</button></div>
+        </div>
+        <div class="panel">
+          <h3>Twitch</h3>
+          <button class="btn btn-secondary" id="reconnect-btn">Twitch neu verbinden</button>
+        </div>
+      </section>
+
+      <section id="tab-logs" class="tab">
+        <div class="section-head"><h2>Logs</h2><button class="btn btn-secondary" id="clear-logs-btn">Logs leeren</button></div>
+        <div id="log-list" class="log-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="lamp-modal" class="modal hidden"><div class="modal-content"><div class="modal-head"><h3>Lampe</h3><button onclick="closeModal('lamp-modal')">×</button></div><form id="lamp-form"><input type="hidden" id="lamp-id"><label>Name<input id="lamp-name" required></label><label>Typ<select id="lamp-type"><option value="wled">WLED</option><option value="govee">Govee</option></select></label><label>Adresse / IP<input id="lamp-address" required placeholder="192.168.1.50"></label><label>API Key (nur wenn nötig)<input id="lamp-api-key"></label><label class="inline"><input type="checkbox" id="lamp-enabled" checked> Aktiviert</label><div class="actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div></form></div></div>
+
+  <div id="streamer-modal" class="modal hidden"><div class="modal-content"><div class="modal-head"><h3>Streamer</h3><button onclick="closeModal('streamer-modal')">×</button></div><form id="streamer-form"><input type="hidden" id="streamer-id"><label>Twitch Login<input id="streamer-login" required placeholder="streamername"></label><label class="inline"><input type="checkbox" id="streamer-enabled" checked> Aktiviert</label><div class="actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div></form></div></div>
+
+  <div id="online-rule-modal" class="modal hidden"><div class="modal-content modal-wide"><div class="modal-head"><h3>Online-Szene</h3><button onclick="closeModal('online-rule-modal')">×</button></div><form id="online-rule-form"><input type="hidden" id="online-rule-id"><label>Streamer<select id="online-rule-streamer"></select></label><label class="inline"><input type="checkbox" id="online-rule-enabled" checked> Aktiviert</label><div id="online-rule-targets" class="targets"></div><div class="actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div></form></div></div>
+
+  <div id="chat-rule-modal" class="modal hidden"><div class="modal-content modal-wide"><div class="modal-head"><h3>Chat-Regel</h3><button onclick="closeModal('chat-rule-modal')">×</button></div><form id="chat-rule-form"><input type="hidden" id="chat-rule-id"><label>Name<input id="chat-rule-name" required placeholder="z.B. Hype"></label><label>Streamer<select id="chat-rule-streamer"></select></label><div class="form-grid"><label>Text / Emote<input id="chat-rule-text" required placeholder="Kappa oder hype"></label><label>Match<select id="chat-rule-match-type"><option value="contains">enthält</option><option value="exact">genau gleich</option></select></label><label>Zeitfenster (Sek.)<input id="chat-rule-window" type="number" min="1" value="10"></label><label>Mindestanzahl<input id="chat-rule-min" type="number" min="1" value="5"></label></div><label class="inline"><input type="checkbox" id="chat-rule-enabled" checked> Aktiviert</label><div id="chat-rule-targets" class="targets"></div><div class="actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div></form></div></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

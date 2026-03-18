@@ -1,0 +1,9 @@
+services:
+  twitch-lamp-controller:
+    build: .
+    container_name: twitch-lamp-controller
+    ports:
+      - "3847:3847"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
