@@ -287,6 +287,20 @@ function log(level, source, message) {
 }
 function getRecentLogs(limit = 100) { return getDb().prepare('SELECT * FROM logs ORDER BY last_seen DESC LIMIT ?').all(limit); }
 function clearLogs() { getDb().prepare('DELETE FROM logs').run(); }
+function replaceAllConfig() {
+  const conn = getDb();
+  conn.exec(`
+    DELETE FROM online_rules;
+    DELETE FROM chat_rules;
+    DELETE FROM streamers;
+    DELETE FROM lamps;
+    DELETE FROM settings;
+  `);
+  setDefaultSetting('port', 3847);
+  setDefaultSetting('online_poll_seconds', 30);
+  setDefaultSetting('rotation_seconds', 20);
+  setDefaultSetting('healthcheck_seconds', 30);
+}
 
 module.exports = {
   getDb,
@@ -314,5 +328,6 @@ module.exports = {
   deleteChatRule,
   log,
   getRecentLogs,
-  clearLogs
+  clearLogs,
+  replaceAllConfig
 };
