@@ -24,7 +24,8 @@ const effectLabel = (target) => target.mode === 'effect' ? `Effekt ${target.effe
 
 window.openModal = (id) => document.getElementById(id).classList.remove('hidden');
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
-window.openLampModal = () => { resetLampForm(); openModal('lamp-modal'); renderLampWizardHelp(); };
+window.openLampModal = () => { resetLampForm(); openModal('lamp-modal'); renderLampWizardHelp(); renderHueAssistant(); };
+window.useDiscoveryLamp = function(type, address, name) { byId('lamp-type').value = type; byId('lamp-address').value = address; if (!byId('lamp-name').value) byId('lamp-name').value = name || ''; renderLampWizardHelp(); renderHueAssistant(); openModal('lamp-modal'); };
 window.openStreamerModal = () => { resetStreamerForm(); openModal('streamer-modal'); };
 window.openOnlineRuleModal = () => { resetOnlineRuleForm(); openModal('online-rule-modal'); };
 window.openChatRuleModal = () => { resetChatRuleForm(); openModal('chat-rule-modal'); };
@@ -97,8 +98,10 @@ function bindForms() {
   byId('run-rule-test-btn')?.addEventListener('click', runRuleTestNow);
   byId('export-config-btn').addEventListener('click', exportConfig);
   byId('import-config-input').addEventListener('change', importConfig);
-  byId('lamp-type').addEventListener('change', renderLampWizardHelp);
+  byId('lamp-type').addEventListener('change', () => { renderLampWizardHelp(); renderHueAssistant(); });
   byId('lamp-address').addEventListener('input', handleLampAddressHelper);
+  byId('hue-pair-btn')?.addEventListener('click', pairHueBridge);
+  byId('hue-load-lights-btn')?.addEventListener('click', loadHueLights);
   byId('apply-chat-assistant-btn')?.addEventListener('click', applyChatAssistant);
   byId('online-copy-live-btn')?.addEventListener('click', () => bulkSetTargets('online-rule-targets', { color: '#9147ff', mode: 'static' }));
   byId('chat-copy-hype-btn')?.addEventListener('click', () => bulkSetTargets('chat-rule-targets', { color: '#22c55e', mode: 'static' }));
@@ -194,6 +197,14 @@ function renderDashboard() {
     `Letzter Anwendungs-Lauf: ${formatTime(diagnostics.lamps?.lastApplyAt)} · ${escapeHtml(diagnostics.lamps?.lastApplySummary?.dryRun ? 'nur Testmodus' : 'live angewendet')}`
   ].map((row) => `<div class="status-row"><span>•</span><span>${row}</span></div>`).join('');
 
+  const priorityBox = byId('priority-summary');
+  if (priorityBox) {
+    const conflicts = state.status?.priority?.conflicts || [];
+    priorityBox.innerHTML = conflicts.length
+      ? `<strong>Priorität aktiv:</strong> Chat-Regeln übersteuern gerade Online-Szenen auf ${conflicts.length} Lampe(n): ${conflicts.map((c) => escapeHtml(c.lamp_name)).join(', ')}`
+      : '<strong>Priorität:</strong> Chat-Regeln haben Vorrang vor Online-Rotation, aktuell aber ohne Konflikt.';
+  }
+
   byId('lamp-status').innerHTML = state.lamps.map((lamp) => {
     const runtime = state.status?.lamps?.[lamp.id];
     const source = runtime?.state?.source || 'kein aktiver Zustand';
@@ -223,7 +234,7 @@ function renderLamps() {
           <div class="actions-row compact-top">
             <button class="btn btn-ghost" onclick="diagnoseLamp('${lamp.id}')">Diagnose</button>
             <button class="btn btn-ghost" onclick="refreshLampEffects('${lamp.id}')">Effekte neu laden</button>
-            <span class="meta">${lamp.type === 'wled' ? 'Tipp: WLED antwortet typischerweise unter /json.' : 'Tipp: Govee lokal braucht oft LAN-Control oder API-Key.'}</span>
+            <span class="meta">${lamp.type === 'wled' ? 'Tipp: WLED antwortet typischerweise unter /json.' : lamp.type === 'hue' ? 'Tipp: Hue lokal braucht Bridge-IP, Link-Button und einen Username.' : 'Tipp: Govee lokal braucht oft LAN-Control oder API-Key.'}</span>
           </div>
         </div>
         <div class="actions">
@@ -239,8 +250,9 @@ window.editLamp = function(id) {
   byId('lamp-id').value = lamp.id;
   byId('lamp-name').value = lamp.name;
   byId('lamp-type').value = lamp.type;
-  byId('lamp-address').value = lamp.address;
+  byId('lamp-address').value = lamp.metadata?.bridge_ip || lamp.address;
   byId('lamp-api-key').value = lamp.api_key || '';
+  if (lamp.type === 'hue') { const select = byId('hue-light-select'); if (select) select.innerHTML = `<option value="${escapeHtml(lamp.metadata?.light_id || lamp.address.split('/')[1] || '')}" selected>${escapeHtml(lamp.name)}</option>`; }
   byId('lamp-enabled').checked = lamp.enabled;
   renderLampWizardHelp();
   openModal('lamp-modal');
@@ -328,15 +340,16 @@ function renderSettings() {
     const groups = [
       ...(devices.wled || []).map((item) => `WLED · ${item.name} · ${item.address}`),
       ...(devices.govee || []).map((item) => `Govee · ${item.name} · ${item.address}`),
-      ...(devices.hue || []).map((item) => `Hue Bridge · ${item.address}`)
+      ...(devices.hue || []).map((item) => `Hue Bridge · ${item.address} · per Assistent koppelbar`)
     ];
     discoveryBox.innerHTML = groups.length ? groups.map((row) => `<div class="status-row"><span>•</span><span>${escapeHtml(row)}</span></div>`).join('') : 'Noch keine Discovery gelaufen.';
   }
   const ruleTest = byId('rule-test-results');
   if (ruleTest) {
     const actions = state.lastRuleTest?.result?.actions || [];
+    const conflicts = state.lastRuleTest?.result?.conflicts || [];
     ruleTest.innerHTML = actions.length
-      ? actions.map((entry) => `<div class="status-row"><span>•</span><span>${escapeHtml(`${entry.lamp_name}: ${entry.action === 'color' ? entry.nextState?.color : entry.action === 'effect' ? `Effekt ${entry.nextState?.effect_name}` : entry.action}`)}</span></div>`).join('')
+      ? actions.map((entry) => `<div class="status-row"><span>•</span><span>${escapeHtml(`${entry.lamp_name}: ${entry.action === 'color' ? entry.nextState?.color : entry.action === 'effect' ? `Effekt ${entry.nextState?.effect_name}` : entry.action}`)}</span></div>`).join('') + (conflicts.length ? `<div class="priority-box"><strong>Priorität:</strong> Chat-Regeln gewinnen bei Konflikten. ${conflicts.map((c) => escapeHtml(c.lamp_name)).join(', ')}</div>` : '')
       : 'Noch kein Regel-Test gelaufen.';
   }
 }
@@ -473,15 +486,44 @@ function renderLampWizardHelp() {
   if (!box) return;
   const content = type === 'wled'
     ? '<strong>WLED Schnellhilfe</strong><br>Trage am besten nur IP oder Hostname ein, z. B. <code>192.168.1.50</code> oder <code>wled-kueche.local</code>. Danach kannst du direkt „Diagnose“ und „Effekte neu laden“ nutzen.'
-    : '<strong>Govee Schnellhilfe</strong><br>Für lokale Steuerung meist IP eintragen. Falls dein Modell es braucht oder Cloud-Steuerung genutzt wird, zusätzlich den API-Key hinterlegen. Eine kurze Preset-Liste ist bei Govee normal.';
+    : type === 'govee'
+      ? '<strong>Govee Schnellhilfe</strong><br>Für lokale Steuerung meist IP eintragen. Falls dein Modell es braucht oder Cloud-Steuerung genutzt wird, zusätzlich den API-Key hinterlegen. Eine kurze Preset-Liste ist bei Govee normal.'
+      : '<strong>Hue Schnellhilfe</strong><br>Am einfachsten unten im Hue-Assistenten: Bridge suchen, Link-Button drücken, koppeln, Licht auswählen, speichern. Adresse wird dabei automatisch gebaut.';
   box.innerHTML = content;
 }
 
+
+function renderHueAssistant() {
+  const type = byId('lamp-type')?.value || 'wled';
+  const box = byId('hue-assistant-box');
+  if (!box) return;
+  box.classList.toggle('hidden', type !== 'hue');
+}
+
+async function pairHueBridge() {
+  const bridgeIp = byId('lamp-address').value.trim().split('/')[0];
+  if (!bridgeIp) return toast('Bitte zuerst die Hue-Bridge-IP eintragen oder per Discovery kopieren.', true);
+  const data = await api('/discover/hue/pair', { method: 'POST', body: JSON.stringify({ address: bridgeIp }) });
+  byId('lamp-api-key').value = data.result.username;
+  toast('Hue Bridge gekoppelt. Jetzt Lichter laden.');
+  await loadHueLights();
+}
+
+async function loadHueLights() {
+  const bridgeIp = byId('lamp-address').value.trim().split('/')[0];
+  const username = byId('lamp-api-key').value.trim();
+  if (!bridgeIp || !username) return toast('Für Hue werden Bridge-IP und Username benötigt.', true);
+  const data = await api(`/discover/hue/lights?bridge_ip=${encodeURIComponent(bridgeIp)}&username=${encodeURIComponent(username)}`);
+  const select = byId('hue-light-select');
+  select.innerHTML = ['<option value="">Bitte Licht wählen</option>'].concat((data.lights || []).map((light) => `<option value="${escapeHtml(light.light_id || light.id)}" data-name="${escapeHtml(light.name)}">${escapeHtml(light.name)}</option>`)).join('');
+  byId('hue-assistant-result').textContent = data.lights?.length ? `${data.lights.length} Hue-Lichter gefunden.` : 'Keine Hue-Lichter gefunden.';
+}
 function handleLampAddressHelper() {
   const type = byId('lamp-type').value;
   const raw = byId('lamp-address').value.trim();
   if (!raw) return;
   if (type === 'wled') byId('lamp-address').value = raw.replace(/^https?:\/\//, '').replace(/\/json.*$/,'').replace(/\/$/, '');
+  if (type === 'hue') byId('lamp-address').value = raw.replace(/^https?:\/\//, '').replace(/\/$/, '');
 }
 
 async function runHealthcheckNow() { await api('/diagnostics/healthcheck', { method: 'POST' }); toast('Healthcheck gestartet.'); await refreshAll(); }
@@ -506,9 +548,15 @@ async function runRuleTestNow() {
 async function saveLamp(e) {
   e.preventDefault();
   const type = byId('lamp-type').value;
-  if (type === 'hue') return toast('Hue-Bridge-Erkennung ist drin, als speicherbarer Lampentyp aber noch nicht final freigeschaltet.', true);
   const id = byId('lamp-id').value;
   const payload = { name: byId('lamp-name').value.trim(), type, address: byId('lamp-address').value.trim(), api_key: byId('lamp-api-key').value.trim() || null, enabled: byId('lamp-enabled').checked };
+  if (type === 'hue') {
+    const lightId = byId('hue-light-select').value;
+    const lightName = byId('hue-light-select').selectedOptions?.[0]?.textContent || payload.name;
+    payload.metadata = { bridge_ip: payload.address.split('/')[0], light_id: lightId };
+    payload.address = `${payload.metadata.bridge_ip}/${lightId}`;
+    if (!payload.name) payload.name = lightName;
+  }
   await api(id ? `/lamps/${id}` : '/lamps', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
   closeModal('lamp-modal'); resetLampForm(); toast('Lampe gespeichert.'); await refreshAll();
 }
@@ -541,7 +589,7 @@ async function importConfig(event) {
 }
 
 window.deleteEntity = async function(endpoint) { if (!confirm('Wirklich löschen?')) return; await api(endpoint, { method: 'DELETE' }); toast('Eintrag gelöscht.'); await refreshAll(); };
-function resetLampForm() { byId('lamp-form').reset(); byId('lamp-id').value = ''; byId('lamp-enabled').checked = true; byId('lamp-type').value = 'wled'; byId('lamp-diagnostics-box').textContent = 'Noch keine Diagnose gelaufen.'; renderLampWizardHelp(); }
+function resetLampForm() { byId('lamp-form').reset(); byId('lamp-id').value = ''; byId('lamp-enabled').checked = true; byId('lamp-type').value = 'wled'; byId('lamp-diagnostics-box').textContent = 'Noch keine Diagnose gelaufen.'; const select = byId('hue-light-select'); if (select) select.innerHTML = '<option value=>Bitte Licht wählen</option>'; const result = byId('hue-assistant-result'); if (result) result.textContent = 'Noch keine Hue-Kopplung gestartet.'; renderLampWizardHelp(); renderHueAssistant(); }
 function resetStreamerForm() { byId('streamer-form').reset(); byId('streamer-id').value = ''; byId('streamer-enabled').checked = true; }
 function resetOnlineRuleForm() { byId('online-rule-form').reset(); byId('online-rule-id').value = ''; byId('online-rule-enabled').checked = true; byId('online-rule-preset').value = ''; fillStreamerSelects(); renderTargets('online-rule-targets'); updateTargetSummary('online-rule-targets', 'online-target-summary'); }
 function resetChatRuleForm() { byId('chat-rule-form').reset(); byId('chat-rule-id').value = ''; byId('chat-rule-window').value = 10; byId('chat-rule-min').value = 5; byId('chat-rule-enabled').checked = true; byId('chat-rule-preset').value = ''; fillStreamerSelects(); renderTargets('chat-rule-targets'); updateTargetSummary('chat-rule-targets', 'chat-target-summary'); renderChatRulePreview(); byId('chat-assistant-result').textContent = 'Wähle kurz dein Ziel, dann fülle ich gute Startwerte ein.'; }

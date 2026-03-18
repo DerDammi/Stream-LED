@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Twitch Lamp Controller V1.3.0</title>
+  <title>Twitch Lamp Controller V1.4.0</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -11,9 +11,9 @@
 
   <div id="setup-screen" class="screen hidden">
     <div class="setup-card">
-      <div class="badge">V1.3.0 · Docker-first</div>
+      <div class="badge">V1.4.0 · Docker-first</div>
       <h1>Twitch Lamp Controller</h1>
-      <p class="subtitle">Noob-freundliches Setup für WLED, Govee, Online-Szenen und chatgesteuerte Lampenregeln.</p>
+      <p class="subtitle">Noob-freundliches Setup für WLED, Govee, Philips Hue, Online-Szenen und chatgesteuerte Lampenregeln.</p>
       <div id="lamp-type-overview" class="support-row"></div>
 
       <div class="wizard-box">
@@ -43,7 +43,7 @@
     <aside class="sidebar">
       <div>
         <div class="logo">💡 Twitch Lamp</div>
-        <div class="badge small">V1.3.0</div>
+        <div class="badge small">V1.4.0</div>
       </div>
       <nav>
         <a href="#" class="nav-link active" data-tab="dashboard">Dashboard</a>
@@ -77,7 +77,7 @@
 
         <div class="panel-grid two">
           <div class="panel"><h3>Live Streamer</h3><div id="live-streamers" class="chips"></div></div>
-          <div class="panel"><h3>Diagnose</h3><div id="diagnostics-summary" class="stack"></div></div>
+          <div class="panel"><h3>Diagnose</h3><div id="diagnostics-summary" class="stack"></div><div id="priority-summary" class="priority-box spaced-top">Chat-Regeln haben Vorrang vor Online-Rotation, sobald beide dieselbe Lampe belegen.</div></div>
         </div>
 
         <div class="panel-grid two">
@@ -88,7 +88,7 @@
 
       <section id="tab-lamps" class="tab">
         <div class="section-head"><h2>Lampen</h2><button class="btn btn-primary" onclick="openLampModal()">Lampe hinzufügen</button></div>
-        <p class="help">Lege WLED- oder Govee-Lampen an. V1.3 bringt zusätzlich Discovery-Hilfe, mehr Statussicht und strengere Plausibilitätschecks.</p>
+        <p class="help">Lege WLED-, Govee- oder Hue-Lampen an. V1.4 bringt echte lokale Hue-Kopplung, bessere Discovery und mehr Test-/Prioritätssicht.</p>
         <div id="lamp-list" class="card-list"></div>
       </section>
 
@@ -100,7 +100,7 @@
 
       <section id="tab-online-rules" class="tab">
         <div class="section-head"><h2>Online-Szenen</h2><button class="btn btn-primary" onclick="openOnlineRuleModal()">Online-Szene hinzufügen</button></div>
-        <p class="help">Diese Szene wird aktiv, wenn der Streamer live ist. Chat-Regeln dürfen die Online-Szene temporär übersteuern.</p>
+        <p class="help">Diese Szene wird aktiv, wenn der Streamer live ist. Falls dieselbe Lampe auch in einer aktiven Chat-Regel steckt, gewinnt immer die Chat-Regel.</p>
         <div id="online-rule-list" class="card-list"></div>
       </section>
 
@@ -134,7 +134,7 @@
               <input id="discovery-address" placeholder="optional: 192.168.1.50 oder wled.local">
               <button class="btn btn-secondary" id="discover-lamps-btn">Discovery starten</button>
             </div>
-            <div id="discovery-results" class="preview-box small-box">Noch keine Discovery gelaufen.</div>
+            <div id="discovery-results" class="preview-box small-box">Noch keine Discovery gelaufen.</div><p class="help">Tipp: Gefundene Hue Bridges kannst du direkt im Lampen-Dialog mit dem Hue-Assistenten koppeln.</p>
           </div>
         </div>
         <div class="panel-grid two">
@@ -152,7 +152,7 @@
           </div>
           <div class="panel">
             <h3>Config Import / Export</h3>
-            <p class="help">Vor dem Import am besten erst einen Export ziehen. V1.3 prüft die Datei strenger und zeigt dir eine kleine Zusammenfassung an.</p>
+            <p class="help">Vor dem Import am besten erst einen Export ziehen. V1.4 prüft die Datei strenger und zeigt dir eine kleine Zusammenfassung an.</p>
             <div class="actions-row actions-stack">
               <button class="btn btn-secondary" id="export-config-btn">Config exportieren</button>
               <select id="import-mode-select">
@@ -180,13 +180,13 @@
         <input type="hidden" id="lamp-id">
         <div class="form-grid">
           <label>Name<input id="lamp-name" required></label>
-          <label>Typ<select id="lamp-type"><option value="wled">WLED</option><option value="govee">Govee</option></select></label>
+          <label>Typ<select id="lamp-type"><option value="wled">WLED</option><option value="govee">Govee</option><option value="hue">Philips Hue</option></select></label>
           <label>Adresse / IP<input id="lamp-address" required placeholder="192.168.1.50 oder wled-kueche.local"></label>
           <label>API Key (nur wenn nötig)<input id="lamp-api-key"></label>
         </div>
         <div id="lamp-helper-box" class="preview-box small-box"></div>
         <label class="inline"><input type="checkbox" id="lamp-enabled" checked> Aktiviert</label>
-        <p class="help">Philips Hue ist in V1.3 bei der Bridge-Erkennung ein Stück weiter, als echter Lampentyp aber noch bewusst nicht final freigeschaltet.</p>
+        <div id="hue-assistant-box" class="preview-box small-box hidden"><strong>Hue-Assistent</strong><br>1. Bridge-IP eintragen oder aus Discovery übernehmen.<br>2. Link-Button auf der Bridge drücken.<br>3. <em>Bridge koppeln</em> klicken.<br>4. Danach Lichter laden und eines auswählen.<div class="actions-row compact-top"><button type="button" class="btn btn-secondary" id="hue-pair-btn">Bridge koppeln</button><button type="button" class="btn btn-secondary" id="hue-load-lights-btn">Lichter laden</button><select id="hue-light-select"><option value="">Bitte Licht wählen</option></select></div><div id="hue-assistant-result" class="meta spaced-top">Noch keine Hue-Kopplung gestartet.</div></div>
         <div class="actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div>
         <div id="lamp-diagnostics-box" class="preview-box small-box">Noch keine Diagnose gelaufen.</div>
       </form>

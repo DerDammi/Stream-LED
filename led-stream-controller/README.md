@@ -1,8 +1,8 @@
-# Twitch Lamp Controller V1.3.0
+# Twitch Lamp Controller V1.4.0
 
 Lokales Webinterface für WLED- und Govee-Lampen mit Twitch-Anbindung.
 
-## Was in V1.3.0 besser ist
+## Was in V1.4.0 besser ist
 
 - **praktischere Lampen-Discovery** für WLED, Govee LAN und erste **Hue-Bridge-Erkennung**
 - deutlich mehr **Status- und Diagnose-Sicht** im Dashboard und in den API-Statusdaten
@@ -79,9 +79,9 @@ Danach im Webinterface einfach auf **Mit Twitch verbinden** klicken.
 - **Discovery** lauscht auf Govee-LAN-Antworten und zeigt gefundene Geräte kompakt an
 
 ### Philips Hue
-- V1.3 erkennt jetzt **Hue Bridges** und zeigt an, dass das Gerät grundsätzlich gefunden wurde
-- kompletter Link-Button-/Benutzer-/Lampflow ist noch **nicht final freigeschaltet**
-- Ziel war: sinnvoll vorbereiten, nicht halbgar aufblasen
+- V1.4 kann jetzt **Hue Bridges lokal koppeln** (Link-Button), **Hue-Lichter laden** und als echte Lampen importieren
+- gespeichert wird bewusst simpel: Bridge-IP + lokaler Username + ausgewähltes Licht
+- Fokus bleibt lokal-first: Farbe, Ein/Aus und ein kleiner Blink-Fallback statt unnötig komplexer Effekt-Magie
 
 ## Online-Szenen, Chat-Regeln und Testmodus
 
@@ -129,5 +129,5 @@ Im Dashboard siehst du jetzt zusätzlich:
 ## Hinweise
 
 - Discovery ist bewusst **praktisch statt magisch**: sie hilft viel, garantiert aber nicht jede exotische Netzkonstellation
-- Hue ist jetzt sinnvoller vorbereitet, aber noch nicht der finale Lampen-Workflow
+- Hue ist jetzt als kleiner, echter lokaler Workflow drin – bewusst pragmatisch statt überladen
 - bei **Ersetzen** ist Export vor dem Import weiterhin der sichere Weg

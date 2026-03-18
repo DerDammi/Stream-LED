@@ -16,6 +16,11 @@ function getDb() {
   return db;
 }
 
+function ensureColumn(table, column, sql) {
+  const columns = getDb().prepare(`PRAGMA table_info(${table})`).all().map((entry) => entry.name);
+  if (!columns.includes(column)) getDb().exec(`ALTER TABLE ${table} ADD COLUMN ${sql}`);
+}
+
 function initSchema() {
   const conn = getDb();
   conn.exec(`
@@ -40,11 +45,12 @@ function initSchema() {
     CREATE TABLE IF NOT EXISTS lamps (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      type TEXT NOT NULL CHECK (type IN ('wled', 'govee')),
+      type TEXT NOT NULL CHECK (type IN ('wled', 'govee', 'hue')),
       address TEXT NOT NULL,
       api_key TEXT,
       enabled INTEGER DEFAULT 1,
       effects_json TEXT DEFAULT '[]',
+      metadata_json TEXT DEFAULT '{}',
       last_seen TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
@@ -92,8 +98,8 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_logs_hash ON logs(hash);
   `);
 
-  const columns = conn.prepare(`PRAGMA table_info(twitch_auth)`).all().map((c) => c.name);
-  if (!columns.includes('client_secret')) conn.exec(`ALTER TABLE twitch_auth ADD COLUMN client_secret TEXT`);
+  ensureColumn('twitch_auth', 'client_secret', 'client_secret TEXT');
+  ensureColumn('lamps', 'metadata_json', "metadata_json TEXT DEFAULT '{}'");
 
   setDefaultSetting('port', 3847);
   setDefaultSetting('online_poll_seconds', 30);
@@ -159,8 +165,8 @@ function getLamp(id) {
 }
 function saveLamp(lamp) {
   getDb().prepare(`
-    INSERT INTO lamps (id, name, type, address, api_key, enabled, effects_json, last_seen)
-    VALUES (@id, @name, @type, @address, @api_key, @enabled, @effects_json, @last_seen)
+    INSERT INTO lamps (id, name, type, address, api_key, enabled, effects_json, metadata_json, last_seen)
+    VALUES (@id, @name, @type, @address, @api_key, @enabled, @effects_json, @metadata_json, @last_seen)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       type = excluded.type,
@@ -168,6 +174,7 @@ function saveLamp(lamp) {
       api_key = excluded.api_key,
       enabled = excluded.enabled,
       effects_json = COALESCE(excluded.effects_json, lamps.effects_json),
+      metadata_json = COALESCE(excluded.metadata_json, lamps.metadata_json),
       last_seen = COALESCE(excluded.last_seen, lamps.last_seen)
   `).run({
     id: lamp.id,
@@ -177,6 +184,7 @@ function saveLamp(lamp) {
     api_key: lamp.api_key || null,
     enabled: lamp.enabled ? 1 : 0,
     effects_json: JSON.stringify(lamp.effects || []),
+    metadata_json: JSON.stringify(lamp.metadata || {}),
     last_seen: lamp.last_seen || null
   });
   return getLamp(lamp.id);
@@ -268,7 +276,7 @@ function saveChatRule(rule) {
 function deleteChatRule(id) { getDb().prepare('DELETE FROM chat_rules WHERE id = ?').run(id); }
 
 function parseLamp(row) {
-  return { ...row, enabled: !!row.enabled, effects: JSON.parse(row.effects_json || '[]') };
+  return { ...row, enabled: !!row.enabled, effects: JSON.parse(row.effects_json || '[]'), metadata: JSON.parse(row.metadata_json || '{}') };
 }
 function parseTargetsRule(row) {
   return { ...row, enabled: !!row.enabled, targets: JSON.parse(row.targets_json || '[]') };

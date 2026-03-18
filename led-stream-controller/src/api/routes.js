@@ -26,17 +26,26 @@ function sanitizeTargets(targets = []) {
 function validateLampPayload(payload, existingId = null) {
   const name = String(payload.name || '').trim();
   const type = payload.type === 'govee' ? 'govee' : payload.type === 'hue' ? 'hue' : 'wled';
-  if (type === 'hue') throw new Error('Hue-Bridge-Erkennung ist in V1.3 drin, als speicherbarer Lampentyp aber noch bewusst nicht final freigeschaltet.');
-  const address = normalizeAddress(payload.address);
   const api_key = String(payload.api_key || '').trim() || null;
+  const metadata = payload && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata) ? payload.metadata : {};
+  let address = normalizeAddress(payload.address);
+
+  if (type === 'hue') {
+    const bridgeIp = normalizeAddress(metadata.bridge_ip || payload.bridge_ip || address.split('/')[0]);
+    const lightId = String(metadata.light_id || payload.light_id || address.split('/')[1] || '').trim();
+    if (!bridgeIp) throw new Error('Bitte trage die Hue-Bridge-IP ein oder importiere ein Licht aus der Discovery.');
+    if (!lightId) throw new Error('Bitte wähle ein konkretes Hue-Licht aus. Am einfachsten per Hue-Assistent im Lampen-Dialog.');
+    if (!api_key) throw new Error('Für Hue fehlt noch der lokale Bridge-Username. Bitte zuerst im Assistenten koppeln.');
+    address = `${bridgeIp}/${lightId}`;
+  }
+
   if (!name) throw new Error('Bitte gib der Lampe einen Namen.');
   if (!address) throw new Error('Bitte trage IP, Hostname oder Geräteadresse ein.');
   if (type === 'wled' && !/^[a-z0-9.-]+$/i.test(address)) throw new Error('WLED-Adresse sieht unplausibel aus. Bitte nur Hostname oder IP eintragen.');
   if (type === 'govee' && !api_key && !/^(\d{1,3}\.){3}\d{1,3}$/.test(address)) throw new Error('Für Govee ohne API-Key bitte eine lokale IP-Adresse eintragen.');
-  if (type === 'hue' && api_key) throw new Error('Hue nutzt hier noch keinen API-Key. Trage nur die Bridge-IP ein.');
   const duplicate = db.getAllLamps().find((lamp) => lamp.id !== existingId && lamp.address === address && lamp.type === type);
   if (duplicate) throw new Error(`Diese Lampe existiert schon: ${duplicate.name}`);
-  return { name, type, address, api_key, enabled: payload.enabled !== false };
+  return { name, type, address, api_key, enabled: payload.enabled !== false, metadata: { ...metadata, bridge_ip: type === 'hue' ? address.split('/')[0] : metadata.bridge_ip || null, light_id: type === 'hue' ? address.split('/')[1] : metadata.light_id || null } };
 }
 
 function validateStreamerPayload(payload, existingId = null) {
@@ -86,9 +95,9 @@ function validateSettingsPayload(payload = {}) {
   return next;
 }
 
-function snapshotConfig() { /* unchanged-ish export */
+function snapshotConfig() {
   return {
-    version: 4,
+    version: 5,
     exported_at: new Date().toISOString(),
     settings: {
       online_poll_seconds: db.getSetting('online_poll_seconds', 30),
@@ -96,7 +105,7 @@ function snapshotConfig() { /* unchanged-ish export */
       healthcheck_seconds: db.getSetting('healthcheck_seconds', 30)
     },
     twitch_app: (() => { const auth = db.getTwitchAuth() || {}; return { client_id: auth.client_id || '', client_secret: auth.client_secret || '' }; })(),
-    lamps: db.getAllLamps().map((lamp) => ({ name: lamp.name, type: lamp.type, address: lamp.address, api_key: lamp.api_key || '', enabled: lamp.enabled, effects: lamp.effects || [] })),
+    lamps: db.getAllLamps().map((lamp) => ({ name: lamp.name, type: lamp.type, address: lamp.address, api_key: lamp.api_key || '', enabled: lamp.enabled, effects: lamp.effects || [], metadata: lamp.metadata || {} })),
     streamers: db.getAllStreamers().map((streamer) => ({ login: streamer.login, enabled: !!streamer.enabled })),
     onlineRules: db.getAllOnlineRules().map((rule) => ({ streamer_login: rule.streamer_login, enabled: rule.enabled, targets: rule.targets })),
     chatRules: db.getAllChatRules().map((rule) => ({ name: rule.name, streamer_login: rule.streamer_login, match_text: rule.match_text, match_type: rule.match_type, window_seconds: rule.window_seconds, min_matches: rule.min_matches, enabled: rule.enabled, targets: rule.targets }))
@@ -165,16 +174,14 @@ function applyImportPayload(payload, mode = 'replace') {
     if (!lampId || !db.getLamp(lampId)) return null;
     return { lamp_id: lampId, mode: target.mode === 'effect' ? 'effect' : 'static', color: String(target.color || '#9147ff'), effect_name: target.effect_name == null ? '' : String(target.effect_name), effect_speed: clampByte(target.effect_speed), effect_intensity: clampByte(target.effect_intensity) };
   };
-  const onlineRules = Array.isArray(payload.onlineRules) ? payload.onlineRules : [];
-  const chatRules = Array.isArray(payload.chatRules) ? payload.chatRules : [];
-  for (const rule of onlineRules) {
+  for (const rule of Array.isArray(payload.onlineRules) ? payload.onlineRules : []) {
     const streamer_id = streamerMap.get(String(rule.streamer_login || '').trim().toLowerCase()) || db.getAllStreamers().find((entry) => entry.login === String(rule.streamer_login || '').trim().toLowerCase())?.id;
     const targets = (Array.isArray(rule.targets) ? rule.targets : []).map(resolveTarget).filter(Boolean);
     if (!streamer_id || targets.length === 0) { result.skipped.push(`Online-Szene für ${String(rule.streamer_login || 'unbekannt')} übersprungen.`); continue; }
     db.saveOnlineRule({ id: uuidv4(), streamer_id, enabled: rule.enabled !== false, targets });
     result.created.onlineRules += 1;
   }
-  for (const rule of chatRules) {
+  for (const rule of Array.isArray(payload.chatRules) ? payload.chatRules : []) {
     const streamer_id = streamerMap.get(String(rule.streamer_login || '').trim().toLowerCase()) || db.getAllStreamers().find((entry) => entry.login === String(rule.streamer_login || '').trim().toLowerCase())?.id;
     const targets = (Array.isArray(rule.targets) ? rule.targets : []).map(resolveTarget).filter(Boolean);
     if (!streamer_id || targets.length === 0) { result.skipped.push(`Chat-Regel ${String(rule.name || 'ohne Namen')} übersprungen.`); continue; }
@@ -202,12 +209,12 @@ function createApiRouter(effectManager, twitch) {
   router.get('/meta/support', (_req, res) => res.json({ lampTypes: [
     { id: 'wled', name: 'WLED', status: 'supported', helper: 'Am einfachsten per IP/Hostname. Effektliste kann direkt aus WLED geladen werden.' },
     { id: 'govee', name: 'Govee', status: 'supported', helper: 'LAN-Modelle lokal per IP, alternativ mit API-Key. Effektliste ist oft eine Preset-Liste.' },
-    { id: 'hue', name: 'Philips Hue', status: 'beta-prep', helper: 'Bridge-Erkennung ist jetzt drin. Voller Link-Button-/Lampflow bleibt bewusst klein und folgt später sauber.' }
+    { id: 'hue', name: 'Philips Hue', status: 'supported-local', helper: 'V1.4 kann jetzt Hue Bridges lokal koppeln, Lichter importieren und Farbe/Ein-Aus direkt steuern.' }
   ] }));
 
   router.get('/setup/status', (_req, res) => {
     const auth = db.getTwitchAuth();
-    res.json({ needsSetup: !auth?.access_token, hasClientConfig: !!(auth?.client_id && auth?.client_secret), redirectUri: twitch.getRedirectUri(), login: auth?.login || null, checklist: ['Twitch App mit Redirect URI anlegen', 'Client ID und Client Secret eintragen', 'Per Button mit Twitch verbinden', 'Danach Lampen, Streamer und Regeln anlegen'] });
+    res.json({ needsSetup: !auth?.access_token, hasClientConfig: !!(auth?.client_id && auth?.client_secret), redirectUri: twitch.getRedirectUri(), login: auth?.login || null, checklist: ['Twitch App mit Redirect URI anlegen', 'Client ID und Client Secret eintragen', 'Per Button mit Twitch verbinden', 'Lampen per Discovery/Assistent importieren', 'Danach Streamer und Regeln anlegen'] });
   });
 
   router.post('/setup/twitch-app', express.json(), (req, res) => { const current = db.getTwitchAuth() || {}; db.saveTwitchAuth({ ...current, client_id: String(req.body.client_id || '').trim(), client_secret: String(req.body.client_secret || '').trim() }); res.json({ success: true }); });
@@ -217,6 +224,21 @@ function createApiRouter(effectManager, twitch) {
   router.get('/discover/lamps', async (req, res) => {
     const result = await effectManager.discoverLamps({ wled: { address: req.query.address, start: req.query.start, end: req.query.end } });
     res.json({ success: true, result });
+  });
+  router.post('/discover/hue/pair', express.json(), async (req, res) => {
+    try {
+      const address = normalizeAddress(req.body.address || req.body.bridge_ip);
+      const result = await effectManager.hue.pairBridge(address);
+      res.json({ success: true, result: { bridge_ip: address, ...result } });
+    } catch (error) { res.status(400).json({ error: error.message }); }
+  });
+  router.get('/discover/hue/lights', async (req, res) => {
+    try {
+      const bridge_ip = normalizeAddress(req.query.bridge_ip);
+      const username = String(req.query.username || '').trim();
+      const lights = await effectManager.hue.listLights(bridge_ip, username);
+      res.json({ success: true, bridge_ip, username, lights });
+    } catch (error) { res.status(400).json({ error: error.message }); }
   });
 
   router.get('/lamps', (_req, res) => res.json(db.getAllLamps()));
@@ -229,7 +251,8 @@ function createApiRouter(effectManager, twitch) {
   });
   router.put('/lamps/:id', express.json(), async (req, res) => {
     try {
-      db.saveLamp({ ...validateLampPayload(req.body, req.params.id), id: req.params.id });
+      const current = db.getLamp(req.params.id) || {};
+      db.saveLamp({ ...current, ...validateLampPayload(req.body, req.params.id), id: req.params.id, effects: current.effects || [], last_seen: current.last_seen || null });
       try { await effectManager.refreshLampEffects(req.params.id); } catch {}
       res.json({ success: true, lamp: db.getLamp(req.params.id) });
     } catch (error) { res.status(400).json({ error: error.message }); }
@@ -270,6 +293,7 @@ function createApiRouter(effectManager, twitch) {
   router.get('/status', (_req, res) => {
     const twitchStatus = twitch.getStatus();
     const lampDiagnostics = effectManager.getDiagnostics();
+    const runtimeConflicts = lampDiagnostics.lastApplySummary?.conflicts || [];
     res.json({
       twitch: twitchStatus,
       lamps: effectManager.getLampSummary(),
@@ -282,6 +306,10 @@ function createApiRouter(effectManager, twitch) {
       ruleReadiness: {
         onlineRulesReady: db.getAllOnlineRules().filter((rule) => rule.enabled && rule.targets.length > 0).length,
         chatRulesReady: db.getAllChatRules().filter((rule) => rule.enabled && rule.targets.length > 0).length
+      },
+      priority: {
+        summary: runtimeConflicts.length ? 'Chat-Regeln haben Vorrang vor Online-Rotation, wenn beide dieselbe Lampe belegen.' : 'Aktuell keine Regel-Konflikte erkannt.',
+        conflicts: runtimeConflicts
       }
     });
   });

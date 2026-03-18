@@ -188,6 +188,17 @@ class EffectManager {
       this.runtime.activeChatRuleName = null;
     }
 
+    const conflicts = [];
+    if (onlineRule?.targets?.length && chatRule?.targets?.length) {
+      const onlineTargets = new Map(onlineRule.targets.map((target) => [target.lamp_id, target]));
+      for (const target of chatRule.targets) {
+        if (onlineTargets.has(target.lamp_id)) {
+          const lamp = db.getLamp(target.lamp_id);
+          conflicts.push({ lamp_id: target.lamp_id, lamp_name: lamp?.name || target.lamp_id, online_source: `online:${onlineRule.streamer_login}`, chat_source: `chat:${chatRule.name}`, winner: 'chat' });
+        }
+      }
+    }
+
     const actions = [];
     for (const lamp of lamps) {
       const target = desired.get(lamp.id);
@@ -223,8 +234,8 @@ class EffectManager {
       this.runtime.lampStates.set(lamp.id, nextState);
     }
     this.runtime.diagnostics.lastApplyAt = new Date().toISOString();
-    this.runtime.diagnostics.lastApplySummary = { onlineRule: onlineRule ? onlineRule.streamer_login : null, chatRule: chatRule ? chatRule.name : null, actions: actions.length, dryRun };
-    return { onlineRule: onlineRule ? { id: onlineRule.id, streamer_login: onlineRule.streamer_login } : null, chatRule: chatRule ? { id: chatRule.id, name: chatRule.name } : null, actions, dryRun };
+    this.runtime.diagnostics.lastApplySummary = { onlineRule: onlineRule ? onlineRule.streamer_login : null, chatRule: chatRule ? chatRule.name : null, priority: 'chat-overrides-online', conflicts, actions: actions.length, dryRun };
+    return { onlineRule: onlineRule ? { id: onlineRule.id, streamer_login: onlineRule.streamer_login } : null, chatRule: chatRule ? { id: chatRule.id, name: chatRule.name } : null, conflicts, priority: 'chat-overrides-online', actions, dryRun };
   }
 
   async previewTarget(target, options = {}) {
