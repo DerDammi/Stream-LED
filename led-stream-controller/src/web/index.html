@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Twitch Lamp Controller V1.1.1</title>
+  <title>Twitch Lamp Controller V1.2.0</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -11,9 +11,10 @@
 
   <div id="setup-screen" class="screen hidden">
     <div class="setup-card">
-      <div class="badge">V1.1.1 · Docker-first</div>
+      <div class="badge">V1.2.0 · Docker-first</div>
       <h1>Twitch Lamp Controller</h1>
       <p class="subtitle">Noob-freundliches Setup für WLED, Govee, Online-Szenen und chatgesteuerte Lampenregeln.</p>
+      <div id="lamp-type-overview" class="support-row"></div>
 
       <div class="wizard-box">
         <h3>So startest du</h3>
@@ -42,7 +43,7 @@
     <aside class="sidebar">
       <div>
         <div class="logo">💡 Twitch Lamp</div>
-        <div class="badge small">V1.1.1</div>
+        <div class="badge small">V1.2.0</div>
       </div>
       <nav>
         <a href="#" class="nav-link active" data-tab="dashboard">Dashboard</a>
@@ -61,7 +62,7 @@
 
     <main class="content">
       <section id="tab-dashboard" class="tab active">
-        <div class="section-head"><h2>Dashboard</h2><button class="btn btn-secondary" id="refresh-now-btn">Jetzt aktualisieren</button></div>
+        <div class="section-head"><h2>Dashboard</h2><div class="actions-row"><button class="btn btn-secondary" id="run-healthcheck-btn">Healthcheck jetzt</button><button class="btn btn-secondary" id="refresh-now-btn">Jetzt aktualisieren</button></div></div>
         <div class="stats-grid">
           <div class="stat-card"><span>Live</span><strong id="stat-live">0</strong><small>live erkannte Streamer</small></div>
           <div class="stat-card"><span>Lampen</span><strong id="stat-lamps">0</strong><small>davon <span id="stat-lamps-online">0</span> online</small></div>
@@ -70,42 +71,24 @@
         </div>
 
         <div class="panel-grid two">
-          <div class="panel">
-            <h3>Setup-Fortschritt</h3>
-            <div id="dashboard-checklist" class="stack"></div>
-          </div>
-          <div class="panel">
-            <h3>Systemstatus</h3>
-            <div id="system-health" class="stack"></div>
-          </div>
+          <div class="panel"><h3>Setup-Fortschritt</h3><div id="dashboard-checklist" class="stack"></div></div>
+          <div class="panel"><h3>Systemstatus</h3><div id="system-health" class="stack"></div></div>
         </div>
 
         <div class="panel-grid two">
-          <div class="panel">
-            <h3>Live Streamer</h3>
-            <div id="live-streamers" class="chips"></div>
-          </div>
-          <div class="panel">
-            <h3>Diagnose</h3>
-            <div id="diagnostics-summary" class="stack"></div>
-          </div>
+          <div class="panel"><h3>Live Streamer</h3><div id="live-streamers" class="chips"></div></div>
+          <div class="panel"><h3>Diagnose</h3><div id="diagnostics-summary" class="stack"></div></div>
         </div>
 
         <div class="panel-grid two">
-          <div class="panel">
-            <h3>Lampenstatus</h3>
-            <div id="lamp-status" class="card-list"></div>
-          </div>
-          <div class="panel">
-            <h3>Letzte Warnungen / Fehler</h3>
-            <div id="diagnostics-errors" class="log-list"></div>
-          </div>
+          <div class="panel"><h3>Lampenstatus</h3><div id="lamp-status" class="card-list"></div></div>
+          <div class="panel"><h3>Letzte Warnungen / Fehler</h3><div id="diagnostics-errors" class="log-list"></div></div>
         </div>
       </section>
 
       <section id="tab-lamps" class="tab">
         <div class="section-head"><h2>Lampen</h2><button class="btn btn-primary" onclick="openLampModal()">Lampe hinzufügen</button></div>
-        <p class="help">Lege WLED- oder Govee-Lampen an. Danach kannst du Effekte aus der Lampen-API laden und direkt testen.</p>
+        <p class="help">Lege WLED- oder Govee-Lampen an. Neu in V1.2: bessere Schnellhilfe, Diagnose-Button und bequemere Tests direkt in der Liste.</p>
         <div id="lamp-list" class="card-list"></div>
       </section>
 
@@ -142,13 +125,11 @@
           <div class="panel">
             <h3>Twitch</h3>
             <p class="help">Falls du Token oder App-Daten geändert hast, starte die Verbindung hier neu.</p>
-            <div class="actions-row">
-              <button class="btn btn-secondary" id="reconnect-btn">Twitch neu verbinden</button>
-            </div>
+            <div class="actions-row"><button class="btn btn-secondary" id="reconnect-btn">Twitch neu verbinden</button></div>
           </div>
           <div class="panel">
             <h3>Config Import / Export</h3>
-            <p class="help">Vor dem Import am besten erst einen Export ziehen. V1.1.1 prüft die Datei zuerst und zeigt dir eine kleine Zusammenfassung an.</p>
+            <p class="help">Vor dem Import am besten erst einen Export ziehen. V1.2 prüft die Datei zuerst und zeigt dir eine kleine Zusammenfassung an.</p>
             <div class="actions-row actions-stack">
               <button class="btn btn-secondary" id="export-config-btn">Config exportieren</button>
               <select id="import-mode-select">
@@ -177,12 +158,14 @@
         <div class="form-grid">
           <label>Name<input id="lamp-name" required></label>
           <label>Typ<select id="lamp-type"><option value="wled">WLED</option><option value="govee">Govee</option></select></label>
-          <label>Adresse / IP<input id="lamp-address" required placeholder="192.168.1.50"></label>
+          <label>Adresse / IP<input id="lamp-address" required placeholder="192.168.1.50 oder wled-kueche.local"></label>
           <label>API Key (nur wenn nötig)<input id="lamp-api-key"></label>
         </div>
+        <div id="lamp-helper-box" class="preview-box small-box"></div>
         <label class="inline"><input type="checkbox" id="lamp-enabled" checked> Aktiviert</label>
-        <p class="help">Nach dem Speichern kannst du Effekte laden und in der Lampenliste bequem testen.</p>
+        <p class="help">Philips Hue ist schon sichtbar vorbereitet, aber absichtlich noch nicht als echter Lampentyp aktiv. V1.2 bleibt bewusst übersichtlich.</p>
         <div class="actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div>
+        <div id="lamp-diagnostics-box" class="preview-box small-box">Noch keine Diagnose gelaufen.</div>
       </form>
     </div>
   </div>
@@ -209,7 +192,8 @@
           <label>Vorlage<select id="online-rule-preset"></select></label>
           <label class="inline inline-box"><input type="checkbox" id="online-rule-enabled" checked> Aktiviert</label>
         </div>
-        <p class="help">Wähle pro Lampe Farbe oder Effekt. Die Vorlagen füllen dir einen guten Startwert ein, den du danach noch anpassen kannst.</p>
+        <div class="panel note-panel"><strong>Schnellstart:</strong><span>„Live-Look auf alle“ füllt alle Lampen direkt mit einer soliden Startfarbe. Einzelne Lampen kannst du danach noch feinjustieren oder per „Auf alle kopieren“ spiegeln.</span></div>
+        <div class="actions-row compact-bottom"><button type="button" class="btn btn-secondary" id="online-copy-live-btn">Live-Look auf alle</button><div id="online-target-summary" class="meta"></div></div>
         <div id="online-rule-targets" class="targets"></div>
         <div class="actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div>
       </form>
@@ -230,8 +214,20 @@
           <label>Zeitfenster (Sek.)<input id="chat-rule-window" type="number" min="1" value="10"></label>
           <label>Mindestanzahl<input id="chat-rule-min" type="number" min="1" value="5"></label>
         </div>
+        <div class="panel note-panel assistant-panel">
+          <strong>Regel-Assistent</strong>
+          <select id="chat-assistant-goal">
+            <option value="balanced">Solider Standard</option>
+            <option value="fast">Schneller Meme-Trigger</option>
+            <option value="stable">Stabil, weniger nervös</option>
+            <option value="exact">Nur exakte Nachricht zählt</option>
+          </select>
+          <button type="button" class="btn btn-secondary" id="apply-chat-assistant-btn">Empfehlung übernehmen</button>
+          <span id="chat-assistant-result" class="meta">Wähle kurz dein Ziel, dann fülle ich gute Startwerte ein.</span>
+        </div>
         <div id="chat-rule-preview" class="preview-box"></div>
         <label class="inline"><input type="checkbox" id="chat-rule-enabled" checked> Aktiviert</label>
+        <div class="actions-row compact-bottom"><button type="button" class="btn btn-secondary" id="chat-copy-hype-btn">Hype-Look auf alle</button><div id="chat-target-summary" class="meta"></div></div>
         <div id="chat-rule-targets" class="targets"></div>
         <div class="actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div>
       </form>

@@ -303,6 +303,16 @@ function applyImportPayload(payload, mode = 'replace') {
 function createApiRouter(effectManager, twitch) {
   const router = express.Router();
 
+  router.get('/meta/support', (_req, res) => {
+    res.json({
+      lampTypes: [
+        { id: 'wled', name: 'WLED', status: 'supported', helper: 'Am einfachsten per IP/Hostname. Effektliste kann direkt aus WLED geladen werden.' },
+        { id: 'govee', name: 'Govee', status: 'supported', helper: 'LAN-Modelle lokal per IP, alternativ mit API-Key. Effektliste ist oft eine Preset-Liste.' },
+        { id: 'hue', name: 'Philips Hue', status: 'planned', helper: 'Für V1.2 vorbereitet im UI, aber absichtlich noch nicht aktiv geschaltet.' }
+      ]
+    });
+  });
+
   router.get('/setup/status', (_req, res) => {
     const auth = db.getTwitchAuth();
     res.json({
@@ -357,6 +367,14 @@ function createApiRouter(effectManager, twitch) {
   router.post('/lamps/:id/refresh-effects', async (req, res) => {
     const result = await effectManager.refreshLampEffects(req.params.id);
     res.json({ success: !!result, result, lamp: db.getLamp(req.params.id) });
+  });
+  router.post('/lamps/:id/diagnose', async (req, res) => {
+    try {
+      const result = await effectManager.diagnoseLamp(req.params.id);
+      res.json({ success: true, result, lamp: db.getLamp(req.params.id) });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
   });
   router.post('/lamps/:id/test', express.json(), async (req, res) => {
     const { action, color, effect_name, effect_speed, effect_intensity } = req.body;
@@ -457,6 +475,11 @@ function createApiRouter(effectManager, twitch) {
         chatRules: db.getAllChatRules().length
       }
     });
+  });
+
+  router.post('/diagnostics/healthcheck', async (_req, res) => {
+    await effectManager.healthCheck();
+    res.json({ success: true, diagnostics: effectManager.getDiagnostics() });
   });
 
   router.get('/config/export', (_req, res) => {

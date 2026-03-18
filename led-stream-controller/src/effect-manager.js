@@ -83,6 +83,49 @@ class EffectManager {
     this.runtime.diagnostics.lastHealthCheckError = null;
   }
 
+  async diagnoseLamp(lampId) {
+    const lamp = db.getLamp(lampId);
+    if (!lamp) throw new Error('Lampe nicht gefunden.');
+    const controller = this.getController(lamp.type);
+    const pingOk = await controller.ping(lamp.address, lamp.api_key).catch(() => false);
+    db.updateLampSeen(lamp.id, pingOk);
+
+    let effectRefresh = null;
+    let refreshError = null;
+    try {
+      effectRefresh = await this.refreshLampEffects(lamp.id);
+    } catch (error) {
+      refreshError = error.message;
+    }
+
+    const diagnostics = {
+      lamp_id: lamp.id,
+      pingOk,
+      checkedAt: new Date().toISOString(),
+      effectCount: Array.isArray(effectRefresh?.effects) ? effectRefresh.effects.length : (db.getLamp(lamp.id)?.effects || []).length,
+      info: effectRefresh?.info || null,
+      refreshError,
+      hint: pingOk
+        ? (lamp.type === 'wled'
+          ? 'Lampe antwortet. Falls Effekte fehlen, prüfe ob WLED unter /json erreichbar ist.'
+          : 'Lampe antwortet. Bei Govee sind lokale Effektlisten oft nur Presets – das ist normal.')
+        : (lamp.type === 'wled'
+          ? 'Nicht erreichbar. Prüfe IP/Hostname, ob WLED im gleichen Netz hängt und ob http://IP/json im Browser geht.'
+          : 'Nicht erreichbar. Prüfe IP/Device-ID, gleiches LAN und ggf. API-Key/LAN-Control in der Govee-App.')
+    };
+
+    this.runtime.diagnostics.lampChecks.set(lamp.id, {
+      lamp_id: lamp.id,
+      name: lamp.name,
+      online: pingOk,
+      checkedAt: diagnostics.checkedAt,
+      successAt: pingOk ? diagnostics.checkedAt : null,
+      error: pingOk ? null : diagnostics.hint
+    });
+
+    return diagnostics;
+  }
+
   getLampSummary() {
     const lamps = db.getAllLamps();
     const output = {};
