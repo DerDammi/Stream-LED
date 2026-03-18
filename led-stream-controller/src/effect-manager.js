@@ -11,7 +11,13 @@ class EffectManager {
       activeOnlineStreamer: null,
       activeChatRuleId: null,
       activeChatRuleName: null,
-      lampStates: new Map()
+      lampStates: new Map(),
+      diagnostics: {
+        lastHealthCheckAt: null,
+        lastHealthCheckSuccessAt: null,
+        lastHealthCheckError: null,
+        lampChecks: new Map()
+      }
     };
   }
 
@@ -46,15 +52,35 @@ class EffectManager {
 
   async healthCheck() {
     const lamps = db.getAllLamps().filter((lamp) => lamp.enabled);
+    this.runtime.diagnostics.lastHealthCheckAt = new Date().toISOString();
     for (const lamp of lamps) {
       try {
         const online = await this.getController(lamp.type).ping(lamp.address, lamp.api_key);
         const wasOnline = !!lamp.last_seen;
         db.updateLampSeen(lamp.id, online);
+        this.runtime.diagnostics.lampChecks.set(lamp.id, {
+          lamp_id: lamp.id,
+          name: lamp.name,
+          online,
+          checkedAt: new Date().toISOString(),
+          successAt: online ? new Date().toISOString() : null,
+          error: online ? null : 'Lampe nicht erreichbar'
+        });
         if (online && !wasOnline) db.log('INFO', 'health', `${lamp.name} wieder online`);
         if (!online && wasOnline) db.log('WARN', 'health', `${lamp.name} nicht erreichbar`);
-      } catch {}
+      } catch (error) {
+        this.runtime.diagnostics.lampChecks.set(lamp.id, {
+          lamp_id: lamp.id,
+          name: lamp.name,
+          online: false,
+          checkedAt: new Date().toISOString(),
+          successAt: null,
+          error: error.message
+        });
+      }
     }
+    this.runtime.diagnostics.lastHealthCheckSuccessAt = new Date().toISOString();
+    this.runtime.diagnostics.lastHealthCheckError = null;
   }
 
   getLampSummary() {
@@ -63,10 +89,20 @@ class EffectManager {
     for (const lamp of lamps) {
       output[lamp.id] = {
         lamp,
-        state: this.runtime.lampStates.get(lamp.id) || null
+        state: this.runtime.lampStates.get(lamp.id) || null,
+        diagnostics: this.runtime.diagnostics.lampChecks.get(lamp.id) || null
       };
     }
     return output;
+  }
+
+  getDiagnostics() {
+    return {
+      lastHealthCheckAt: this.runtime.diagnostics.lastHealthCheckAt,
+      lastHealthCheckSuccessAt: this.runtime.diagnostics.lastHealthCheckSuccessAt,
+      lastHealthCheckError: this.runtime.diagnostics.lastHealthCheckError,
+      lamps: [...this.runtime.diagnostics.lampChecks.values()]
+    };
   }
 
   async applyResolvedState({ onlineRule, chatRule }) {

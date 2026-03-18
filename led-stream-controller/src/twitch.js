@@ -13,26 +13,49 @@ class TwitchIntegration {
     this.oauthStates = new Map();
     this.rotationIndex = 0;
     this.rotationTimer = null;
+    this.diagnostics = {
+      initializedAt: null,
+      lastInitSuccessAt: null,
+      lastInitError: null,
+      lastOnlinePollAt: null,
+      lastOnlinePollSuccessAt: null,
+      lastOnlinePollError: null,
+      lastChatConnectAt: null,
+      lastChatDisconnectAt: null,
+      lastChatDisconnectReason: null,
+      lastAuthCheckAt: null,
+      lastAuthError: null
+    };
   }
 
   async initialize() {
+    this.diagnostics.initializedAt = new Date().toISOString();
     this.auth = db.getTwitchAuth();
     if (!this.auth?.access_token || !this.auth?.client_id) {
       db.log('INFO', 'twitch', 'Noch nicht mit Twitch verbunden');
+      this.diagnostics.lastInitError = 'Noch nicht mit Twitch verbunden';
       return false;
     }
 
     const user = await this.fetchCurrentUser();
     if (!user) {
-      db.log('WARN', 'twitch', 'Twitch Token ungültig oder abgelaufen');
+      const message = 'Twitch Token ungültig oder abgelaufen';
+      db.log('WARN', 'twitch', message);
+      this.diagnostics.lastAuthCheckAt = new Date().toISOString();
+      this.diagnostics.lastAuthError = message;
+      this.diagnostics.lastInitError = message;
       return false;
     }
 
     this.auth.login = user.login;
     this.auth.user_id = user.id;
     db.saveTwitchAuth(this.auth);
+    this.diagnostics.lastAuthCheckAt = new Date().toISOString();
+    this.diagnostics.lastAuthError = null;
     await this.connectChat();
     this.startRotation();
+    this.diagnostics.lastInitSuccessAt = new Date().toISOString();
+    this.diagnostics.lastInitError = null;
     return true;
   }
 
@@ -137,8 +160,16 @@ class TwitchIntegration {
     this.chatClient.on('message', (channel, tags, message, self) => {
       if (!self) this.handleChatMessage(channel.replace('#', '').toLowerCase(), message, tags);
     });
-    this.chatClient.on('connected', () => db.log('INFO', 'twitch-chat', `Verbunden mit ${channels.length} Kanal/Kanälen`));
-    this.chatClient.on('disconnected', (reason) => db.log('WARN', 'twitch-chat', `Getrennt: ${reason}`));
+    this.chatClient.on('connected', () => {
+      this.diagnostics.lastChatConnectAt = new Date().toISOString();
+      this.diagnostics.lastChatDisconnectReason = null;
+      db.log('INFO', 'twitch-chat', `Verbunden mit ${channels.length} Kanal/Kanälen`);
+    });
+    this.chatClient.on('disconnected', (reason) => {
+      this.diagnostics.lastChatDisconnectAt = new Date().toISOString();
+      this.diagnostics.lastChatDisconnectReason = reason || 'unbekannt';
+      db.log('WARN', 'twitch-chat', `Getrennt: ${reason}`);
+    });
 
     await this.chatClient.connect();
     this.lastFingerprint = fingerprint;
@@ -191,15 +222,25 @@ class TwitchIntegration {
   }
 
   async pollOnlineStatus() {
+    this.diagnostics.lastOnlinePollAt = new Date().toISOString();
     const channels = this.getChannels();
     if (channels.length === 0) {
       this.onlineStreamers.clear();
+      this.diagnostics.lastOnlinePollSuccessAt = new Date().toISOString();
+      this.diagnostics.lastOnlinePollError = null;
       return [];
     }
     const query = channels.map((login) => `user_login=${encodeURIComponent(login)}`).join('&');
     const data = await this.helixGet(`/streams?${query}`);
+    if (!data) {
+      const message = 'Live-Status konnte nicht von Twitch geladen werden';
+      this.diagnostics.lastOnlinePollError = message;
+      throw new Error(message);
+    }
     const live = new Set((data?.data || []).map((s) => s.user_login.toLowerCase()));
     this.onlineStreamers = live;
+    this.diagnostics.lastOnlinePollSuccessAt = new Date().toISOString();
+    this.diagnostics.lastOnlinePollError = null;
     return [...live];
   }
 
@@ -230,7 +271,7 @@ class TwitchIntegration {
     const activeOnlineRule = this.getActiveOnlineRule();
     return {
       connected: !!this.chatClient,
-      auth: this.auth ? { login: this.auth.login } : null,
+      auth: this.auth ? { login: this.auth.login, expires_at: this.auth.expires_at || null } : null,
       onlineStreamers: [...this.onlineStreamers],
       activeChatRule: activeChatRule ? {
         id: activeChatRule.id,
@@ -244,7 +285,8 @@ class TwitchIntegration {
       activeOnlineRule: activeOnlineRule ? {
         id: activeOnlineRule.id,
         streamer_login: activeOnlineRule.streamer_login
-      } : null
+      } : null,
+      diagnostics: { ...this.diagnostics, watchedChannels: this.getChannels().length }
     };
   }
 

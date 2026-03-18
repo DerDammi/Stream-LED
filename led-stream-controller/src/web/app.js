@@ -2,8 +2,24 @@ const API = '/api';
 let refreshTimer = null;
 let state = { lamps: [], streamers: [], onlineRules: [], chatRules: [], status: null, logs: [], settings: null };
 
+const RULE_PRESETS = {
+  online: [
+    { id: '', name: 'Keine Vorlage' },
+    { id: 'purple-static', name: 'Twitch Purple', target: { mode: 'static', color: '#9147ff' } },
+    { id: 'alert-red', name: 'Live-Alarm Rot', target: { mode: 'static', color: '#ff4d4d' } },
+    { id: 'rainbow-effect', name: 'Rainbow Effekt', target: { mode: 'effect', effect_name: 'Rainbow', effect_speed: 160, effect_intensity: 180 } }
+  ],
+  chat: [
+    { id: '', name: 'Keine Vorlage' },
+    { id: 'hype', name: 'Hype / Spam-Spitze', form: { name: 'Hype', match_text: 'hype', match_type: 'contains', window_seconds: 10, min_matches: 5 }, target: { mode: 'static', color: '#22c55e' } },
+    { id: 'lul', name: 'LUL / Lach-Trigger', form: { name: 'LUL Flood', match_text: 'LUL', match_type: 'contains', window_seconds: 8, min_matches: 4 }, target: { mode: 'static', color: '#f59e0b' } },
+    { id: 'kappa', name: 'Kappa Burst', form: { name: 'Kappa Burst', match_text: 'Kappa', match_type: 'exact', window_seconds: 10, min_matches: 5 }, target: { mode: 'static', color: '#8b5cf6' } }
+  ]
+};
+
 const byId = (id) => document.getElementById(id);
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const formatTime = (value) => value ? new Date(value).toLocaleString('de-DE') : 'noch nie';
 
 window.openModal = (id) => document.getElementById(id).classList.remove('hidden');
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
@@ -18,6 +34,7 @@ async function init() {
   bindNav();
   bindSetup();
   bindForms();
+  fillPresetSelects();
   const setup = await api('/setup/status');
   byId('redirect-uri').textContent = setup.redirectUri;
   byId('setup-checklist').innerHTML = (setup.checklist || []).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
@@ -84,6 +101,13 @@ function bindForms() {
   ['chat-rule-text', 'chat-rule-match-type', 'chat-rule-window', 'chat-rule-min'].forEach((id) => {
     byId(id).addEventListener('input', renderChatRulePreview);
   });
+  byId('online-rule-preset').addEventListener('change', applyOnlinePreset);
+  byId('chat-rule-preset').addEventListener('change', applyChatPreset);
+}
+
+function fillPresetSelects() {
+  byId('online-rule-preset').innerHTML = RULE_PRESETS.online.map((preset) => `<option value="${preset.id}">${escapeHtml(preset.name)}</option>`).join('');
+  byId('chat-rule-preset').innerHTML = RULE_PRESETS.chat.map((preset) => `<option value="${preset.id}">${escapeHtml(preset.name)}</option>`).join('');
 }
 
 function startRefreshLoop() {
@@ -133,6 +157,7 @@ function renderAll() {
 
 function renderDashboard() {
   const twitch = state.status?.twitch || { onlineStreamers: [] };
+  const diagnostics = state.status?.diagnostics || {};
   const onlineLampCount = state.lamps.filter((lamp) => lamp.last_seen).length;
   byId('twitch-status').textContent = twitch.connected ? `🟢 ${twitch.auth?.login || 'Verbunden'}` : '🔴 Nicht verbunden';
   byId('runtime-summary').textContent = twitch.connected
@@ -158,9 +183,9 @@ function renderDashboard() {
 
   const systemRows = [
     `Twitch Chat: ${twitch.connected ? 'verbunden' : 'nicht verbunden'}`,
-    `Live-Streamer: ${twitch.onlineStreamers.length || 0}`,
-    `Online-Regeln: ${state.status?.counts?.onlineRules ?? state.onlineRules.length}`,
-    `Chat-Regeln: ${state.status?.counts?.chatRules ?? state.chatRules.length}`
+    `Überwachte Kanäle: ${diagnostics.twitch?.watchedChannels ?? 0}`,
+    `Letzter Live-Check: ${formatTime(diagnostics.twitch?.lastOnlinePollSuccessAt)}`,
+    `Healthcheck Lampen: ${formatTime(diagnostics.lamps?.lastHealthCheckSuccessAt)}`
   ];
   byId('system-health').innerHTML = systemRows.map((row) => `<div class="status-row"><span>•</span><span>${escapeHtml(row)}</span></div>`).join('');
 
@@ -168,12 +193,20 @@ function renderDashboard() {
     ? twitch.onlineStreamers.map((s) => `<span class="chip live">${escapeHtml(s)}</span>`).join('')
     : '<span class="muted">Niemand live</span>';
 
+  byId('diagnostics-summary').innerHTML = [
+    `Twitch Auth zuletzt geprüft: ${formatTime(diagnostics.twitch?.lastAuthCheckAt)}`,
+    `Chat zuletzt verbunden: ${formatTime(diagnostics.twitch?.lastChatConnectAt)}`,
+    `Letzter Chat-Disconnect: ${diagnostics.twitch?.lastChatDisconnectReason ? `${formatTime(diagnostics.twitch?.lastChatDisconnectAt)} · ${escapeHtml(diagnostics.twitch.lastChatDisconnectReason)}` : 'kein Disconnect bekannt'}`,
+    `Letzter Twitch-Fehler: ${escapeHtml(diagnostics.twitch?.lastOnlinePollError || diagnostics.twitch?.lastAuthError || 'kein Fehler gespeichert')}`
+  ].map((row) => `<div class="status-row"><span>•</span><span>${row}</span></div>`).join('');
+
   byId('lamp-status').innerHTML = state.lamps.map((lamp) => {
     const runtime = state.status.lamps[lamp.id];
     const source = runtime?.state?.source || 'kein aktiver Zustand';
     const detail = runtime?.state?.mode === 'effect'
       ? `Effekt ${runtime.state.effect_name || '-'} · Speed ${runtime.state.effect_speed} · Intensität ${runtime.state.effect_intensity}`
       : runtime?.state?.color ? `Farbe ${runtime.state.color}` : 'wartet auf Szene oder Regel';
+    const diag = runtime?.diagnostics;
     return `
       <div class="card comfort-card">
         <div>
@@ -181,9 +214,12 @@ function renderDashboard() {
           <div class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${escapeHtml(lamp.address)} · ${lamp.last_seen ? 'online' : 'offline'}</div>
           <div class="meta">Quelle: ${escapeHtml(source)}</div>
           <div class="meta">${escapeHtml(detail)}</div>
+          <div class="meta">Diagnose: letzter Check ${formatTime(diag?.checkedAt)} · ${diag?.error ? escapeHtml(diag.error) : 'ok'}</div>
         </div>
       </div>`;
   }).join('') || '<div class="muted">Keine Lampen</div>';
+
+  byId('diagnostics-errors').innerHTML = (diagnostics.recentErrors || []).map((log) => `<div class="log-entry"><span>${escapeHtml(log.last_seen)}</span> <strong>${escapeHtml(log.level)}</strong> [${escapeHtml(log.source)}] ${escapeHtml(log.message)}</div>`).join('') || '<div class="muted">Zuletzt keine Warnungen oder Fehler.</div>';
 }
 
 function renderLamps() {
@@ -256,6 +292,7 @@ window.editOnlineRule = function(id) {
   fillStreamerSelects(rule.streamer_id, null);
   byId('online-rule-streamer').value = rule.streamer_id;
   byId('online-rule-enabled').checked = rule.enabled;
+  byId('online-rule-preset').value = '';
   renderTargets('online-rule-targets', rule.targets);
   openModal('online-rule-modal');
 };
@@ -277,6 +314,7 @@ window.editChatRule = function(id) {
   byId('chat-rule-window').value = rule.window_seconds;
   byId('chat-rule-min').value = rule.min_matches;
   byId('chat-rule-enabled').checked = rule.enabled;
+  byId('chat-rule-preset').value = '';
   renderTargets('chat-rule-targets', rule.targets);
   renderChatRulePreview();
   openModal('chat-rule-modal');
@@ -336,6 +374,48 @@ function renderTargets(containerId, values = null) {
         <label>Intensität<input type="range" min="0" max="255" value="${Number(target.effect_intensity || 128)}" data-field="effect_intensity" data-lamp="${lamp.id}"></label>
       </div>`;
   }).join('');
+}
+
+function applyPresetTarget(containerId, presetTarget) {
+  state.lamps.forEach((lamp) => {
+    const enabled = byId(containerId).querySelector(`[data-field="enabled"][data-lamp="${lamp.id}"]`);
+    const mode = byId(containerId).querySelector(`[data-field="mode"][data-lamp="${lamp.id}"]`);
+    const color = byId(containerId).querySelector(`[data-field="color"][data-lamp="${lamp.id}"]`);
+    const effect = byId(containerId).querySelector(`[data-field="effect_name"][data-lamp="${lamp.id}"]`);
+    const speed = byId(containerId).querySelector(`[data-field="effect_speed"][data-lamp="${lamp.id}"]`);
+    const intensity = byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lamp.id}"]`);
+    if (enabled) enabled.checked = true;
+    if (mode) mode.value = presetTarget.mode || 'static';
+    if (color && presetTarget.color) color.value = presetTarget.color;
+    if (effect && presetTarget.effect_name) {
+      const existingOption = [...effect.options].find((option) => option.value === presetTarget.effect_name);
+      effect.value = existingOption ? presetTarget.effect_name : '';
+    }
+    if (speed && presetTarget.effect_speed != null) speed.value = presetTarget.effect_speed;
+    if (intensity && presetTarget.effect_intensity != null) intensity.value = presetTarget.effect_intensity;
+  });
+}
+
+function applyOnlinePreset() {
+  const preset = RULE_PRESETS.online.find((entry) => entry.id === byId('online-rule-preset').value);
+  if (!preset?.target) return;
+  applyPresetTarget('online-rule-targets', preset.target);
+  toast(`Vorlage „${preset.name}“ übernommen.`);
+}
+
+function applyChatPreset() {
+  const preset = RULE_PRESETS.chat.find((entry) => entry.id === byId('chat-rule-preset').value);
+  if (!preset) return;
+  if (preset.form) {
+    byId('chat-rule-name').value = preset.form.name;
+    byId('chat-rule-text').value = preset.form.match_text;
+    byId('chat-rule-match-type').value = preset.form.match_type;
+    byId('chat-rule-window').value = preset.form.window_seconds;
+    byId('chat-rule-min').value = preset.form.min_matches;
+  }
+  if (preset.target) applyPresetTarget('chat-rule-targets', preset.target);
+  renderChatRulePreview();
+  if (preset.id) toast(`Vorlage „${preset.name}“ übernommen.`);
 }
 
 function collectTargets(containerId) {
@@ -431,22 +511,35 @@ async function exportConfig() {
   link.download = `twitch-lamp-config-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
   link.click();
   URL.revokeObjectURL(link.href);
+  byId('import-hint').innerHTML = 'Backup exportiert. Du kannst jetzt entspannt importieren.';
   toast('Config exportiert.');
 }
 
 async function importConfig(event) {
   const file = event.target.files?.[0];
   if (!file) return;
-  if (!confirm('Import ersetzt die aktuelle Konfiguration. Wirklich fortfahren?')) {
+  try {
+    const mode = byId('import-mode-select').value;
+    const text = await file.text();
+    const payload = JSON.parse(text);
+    const validation = await api('/config/validate', { method: 'POST', body: JSON.stringify(payload) });
+    const summary = `Datei ok: ${validation.summary.lamps} Lampen, ${validation.summary.streamers} Streamer, ${validation.summary.onlineRules} Online-Szenen, ${validation.summary.chatRules} Chat-Regeln.`;
+    byId('import-hint').innerHTML = `${summary}<br>${validation.warnings?.length ? `Hinweise: ${validation.warnings.map(escapeHtml).join(' · ')}` : 'Keine Warnungen erkannt.'}`;
+    const confirmText = `${summary}\n\nModus: ${mode === 'merge' ? 'ergänzen' : 'alles ersetzen'}\n${validation.warnings?.length ? `\nHinweise:\n- ${validation.warnings.join('\n- ')}` : ''}\n\nFortfahren?`;
+    if (!confirm(confirmText)) {
+      event.target.value = '';
+      return;
+    }
+    const result = await api('/config/import', { method: 'POST', body: JSON.stringify({ mode, config: payload }) });
+    byId('import-hint').innerHTML = `Import fertig (${result.result.mode}). Neu: ${result.result.created.lamps} Lampen, ${result.result.created.streamers} Streamer, ${result.result.created.onlineRules} Online-Szenen, ${result.result.created.chatRules} Chat-Regeln.${result.result.skipped.length ? `<br>Übersprungen: ${result.result.skipped.map(escapeHtml).join(' · ')}` : ''}`;
     event.target.value = '';
-    return;
+    toast('Config importiert.');
+    await refreshAll();
+  } catch (error) {
+    byId('import-hint').textContent = error.message || 'Import fehlgeschlagen.';
+    toast(error.message || 'Import fehlgeschlagen.', true);
+    event.target.value = '';
   }
-  const text = await file.text();
-  const payload = JSON.parse(text);
-  await api('/config/import', { method: 'POST', body: JSON.stringify(payload) });
-  event.target.value = '';
-  toast('Config importiert.');
-  await refreshAll();
 }
 
 window.deleteEntity = async function(endpoint) {
@@ -472,6 +565,7 @@ function resetOnlineRuleForm() {
   byId('online-rule-form').reset();
   byId('online-rule-id').value = '';
   byId('online-rule-enabled').checked = true;
+  byId('online-rule-preset').value = '';
   fillStreamerSelects();
   renderTargets('online-rule-targets');
 }
@@ -482,6 +576,7 @@ function resetChatRuleForm() {
   byId('chat-rule-window').value = 10;
   byId('chat-rule-min').value = 5;
   byId('chat-rule-enabled').checked = true;
+  byId('chat-rule-preset').value = '';
   fillStreamerSelects();
   renderTargets('chat-rule-targets');
   renderChatRulePreview();
@@ -491,5 +586,6 @@ function toast(message, isError = false) {
   const box = byId('toast');
   box.textContent = message;
   box.className = `toast ${isError ? 'error' : ''}`;
+  box.classList.remove('hidden');
   setTimeout(() => box.classList.add('hidden'), 2600);
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Twitch Lamp Controller V1.1</title>
+  <title>Twitch Lamp Controller V1.1.1</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
 
   <div id="setup-screen" class="screen hidden">
     <div class="setup-card">
-      <div class="badge">V1.1 · Docker-first</div>
+      <div class="badge">V1.1.1 · Docker-first</div>
       <h1>Twitch Lamp Controller</h1>
       <p class="subtitle">Noob-freundliches Setup für WLED, Govee, Online-Szenen und chatgesteuerte Lampenregeln.</p>
 
@@ -42,7 +42,7 @@
     <aside class="sidebar">
       <div>
         <div class="logo">💡 Twitch Lamp</div>
-        <div class="badge small">V1.1</div>
+        <div class="badge small">V1.1.1</div>
       </div>
       <nav>
         <a href="#" class="nav-link active" data-tab="dashboard">Dashboard</a>
@@ -80,13 +80,26 @@
           </div>
         </div>
 
-        <div class="panel">
-          <h3>Live Streamer</h3>
-          <div id="live-streamers" class="chips"></div>
+        <div class="panel-grid two">
+          <div class="panel">
+            <h3>Live Streamer</h3>
+            <div id="live-streamers" class="chips"></div>
+          </div>
+          <div class="panel">
+            <h3>Diagnose</h3>
+            <div id="diagnostics-summary" class="stack"></div>
+          </div>
         </div>
-        <div class="panel">
-          <h3>Lampenstatus</h3>
-          <div id="lamp-status" class="card-list"></div>
+
+        <div class="panel-grid two">
+          <div class="panel">
+            <h3>Lampenstatus</h3>
+            <div id="lamp-status" class="card-list"></div>
+          </div>
+          <div class="panel">
+            <h3>Letzte Warnungen / Fehler</h3>
+            <div id="diagnostics-errors" class="log-list"></div>
+          </div>
         </div>
       </section>
 
@@ -135,11 +148,16 @@
           </div>
           <div class="panel">
             <h3>Config Import / Export</h3>
-            <p class="help">Exportiert Lampen, Streamer, Regeln und Basis-Settings als JSON. Import ersetzt die aktuelle Konfiguration.</p>
-            <div class="actions-row">
+            <p class="help">Vor dem Import am besten erst einen Export ziehen. V1.1.1 prüft die Datei zuerst und zeigt dir eine kleine Zusammenfassung an.</p>
+            <div class="actions-row actions-stack">
               <button class="btn btn-secondary" id="export-config-btn">Config exportieren</button>
-              <label class="btn btn-secondary file-btn">Config importieren<input id="import-config-input" type="file" accept="application/json"></label>
+              <select id="import-mode-select">
+                <option value="replace">Import ersetzt alles</option>
+                <option value="merge">Import ergänzt bestehende Config</option>
+              </select>
+              <label class="btn btn-secondary file-btn">Config prüfen & importieren<input id="import-config-input" type="file" accept="application/json"></label>
             </div>
+            <div id="import-hint" class="preview-box small-box">Import noch nicht gestartet.</div>
           </div>
         </div>
       </section>
@@ -188,9 +206,10 @@
         <input type="hidden" id="online-rule-id">
         <div class="form-grid">
           <label>Streamer<select id="online-rule-streamer"></select></label>
+          <label>Vorlage<select id="online-rule-preset"></select></label>
           <label class="inline inline-box"><input type="checkbox" id="online-rule-enabled" checked> Aktiviert</label>
         </div>
-        <p class="help">Wähle pro Lampe Farbe oder Effekt. Nur aktivierte Lampen werden in diese Szene übernommen.</p>
+        <p class="help">Wähle pro Lampe Farbe oder Effekt. Die Vorlagen füllen dir einen guten Startwert ein, den du danach noch anpassen kannst.</p>
         <div id="online-rule-targets" class="targets"></div>
         <div class="actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div>
       </form>
@@ -205,6 +224,7 @@
         <div class="form-grid">
           <label>Name<input id="chat-rule-name" required placeholder="z. B. Hype"></label>
           <label>Streamer<select id="chat-rule-streamer"></select></label>
+          <label>Vorlage<select id="chat-rule-preset"></select></label>
           <label>Text / Emote<input id="chat-rule-text" required placeholder="Kappa oder hype"></label>
           <label>Match<select id="chat-rule-match-type"><option value="contains">enthält</option><option value="exact">genau gleich</option></select></label>
           <label>Zeitfenster (Sek.)<input id="chat-rule-window" type="number" min="1" value="10"></label>

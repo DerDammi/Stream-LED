@@ -1,8 +1,16 @@
-# Twitch Lamp Controller V1.1
+# Twitch Lamp Controller V1.1.1
 
 Lokales Webinterface für WLED- und Govee-Lampen mit Twitch-Anbindung.
 
-## Was in V1.1 besser ist
+## Was in V1.1.1 besser ist
+
+- sichererer Config-Import mit Vorab-Prüfung, Warnungen und Modus **ersetzen** oder **ergänzen**
+- Import-Hinweis direkt im UI, inklusive Backup-/Export-Tipp und Import-Zusammenfassung
+- kleine Vorlagen für Online-Szenen und Chat-Regeln, damit typische Setups schneller stehen
+- neues Diagnosefeld im Dashboard für Twitch-Status, Lampen-Checks und letzte Warnungen/Fehler
+- weiterhin bewusst einfach gehalten: gleiche V1/V1.1-Richtung, nur runder und freundlicher
+
+## Was in V1.1 schon besser war
 
 - deutlich noob-freundlicheres Setup mit kleinem Wizard und Klartext-Hinweisen
 - bequemere Lampentests direkt in der Lampenliste
@@ -84,6 +92,15 @@ Sie bleibt aktiv, solange dieses Fenster weiter erfüllt ist.
 
 Unter **Einstellungen** kannst du die Konfiguration als JSON exportieren oder wieder importieren.
 
+V1.1.1 kann vor dem Import prüfen:
+- ob die JSON-Datei strukturell passt
+- wie viele Lampen, Streamer und Regeln erkannt wurden
+- welche Warnungen es vorab gibt
+
+Beim Import gibt es zwei Wege:
+- **Ersetzen**: aktuelle Konfiguration wird komplett ersetzt
+- **Ergänzen**: vorhandene Lampen/Streamer bleiben, neue Einträge werden hinzugefügt bzw. offensichtliche Treffer aktualisiert
+
 Exportiert werden:
 - Lampen
 - Streamer
@@ -95,8 +112,16 @@ Exportiert werden:
 Nicht als aktive Session gedacht:
 - laufende Twitch OAuth Tokens werden nicht als portable Runtime-Konfiguration behandelt
 
+## Diagnose
+
+Im Dashboard siehst du jetzt zusätzlich:
+- letzten Twitch Auth-/Live-Check
+- Chat-Verbindungsstatus und letzten Disconnect-Hinweis
+- Lampen-Healthchecks pro Lampe
+- letzte Warnungen und Fehler
+
 ## Hinweise
 
-- V1.1 bleibt absichtlich einfach: kein unnötiger Architekturumbau
+- V1.1.1 bleibt absichtlich einfach: kein unnötiger Architekturumbau
 - Hue und komplexere Twitch-Events sind weiterhin spätere Erweiterungen
-- Import ersetzt die aktuelle Konfiguration komplett
+- bei **Ersetzen** ist Export vor dem Import weiterhin der sichere Weg
