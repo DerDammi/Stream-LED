@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Twitch Lamp Controller V1.2.0</title>
+  <title>Twitch Lamp Controller V1.3.0</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
 
   <div id="setup-screen" class="screen hidden">
     <div class="setup-card">
-      <div class="badge">V1.2.0 · Docker-first</div>
+      <div class="badge">V1.3.0 · Docker-first</div>
       <h1>Twitch Lamp Controller</h1>
       <p class="subtitle">Noob-freundliches Setup für WLED, Govee, Online-Szenen und chatgesteuerte Lampenregeln.</p>
       <div id="lamp-type-overview" class="support-row"></div>
@@ -43,7 +43,7 @@
     <aside class="sidebar">
       <div>
         <div class="logo">💡 Twitch Lamp</div>
-        <div class="badge small">V1.2.0</div>
+        <div class="badge small">V1.3.0</div>
       </div>
       <nav>
         <a href="#" class="nav-link active" data-tab="dashboard">Dashboard</a>
@@ -88,7 +88,7 @@
 
       <section id="tab-lamps" class="tab">
         <div class="section-head"><h2>Lampen</h2><button class="btn btn-primary" onclick="openLampModal()">Lampe hinzufügen</button></div>
-        <p class="help">Lege WLED- oder Govee-Lampen an. Neu in V1.2: bessere Schnellhilfe, Diagnose-Button und bequemere Tests direkt in der Liste.</p>
+        <p class="help">Lege WLED- oder Govee-Lampen an. V1.3 bringt zusätzlich Discovery-Hilfe, mehr Statussicht und strengere Plausibilitätschecks.</p>
         <div id="lamp-list" class="card-list"></div>
       </section>
 
@@ -128,8 +128,31 @@
             <div class="actions-row"><button class="btn btn-secondary" id="reconnect-btn">Twitch neu verbinden</button></div>
           </div>
           <div class="panel">
+            <h3>Lampen-Discovery</h3>
+            <p class="help">WLED, Govee und Hue Bridge grob im LAN suchen. Optional kannst du eine bekannte IP/Adresse direkt testen.</p>
+            <div class="actions-row actions-stack">
+              <input id="discovery-address" placeholder="optional: 192.168.1.50 oder wled.local">
+              <button class="btn btn-secondary" id="discover-lamps-btn">Discovery starten</button>
+            </div>
+            <div id="discovery-results" class="preview-box small-box">Noch keine Discovery gelaufen.</div>
+          </div>
+        </div>
+        <div class="panel-grid two">
+          <div class="panel">
+            <h3>Regel-Testmodus</h3>
+            <p class="help">Simuliert Online-/Chat-Regeln trocken. Keine echte Lampe wird dabei umgeschaltet.</p>
+            <div class="form-grid">
+              <label>Online-Szene<select id="rule-test-online"></select></label>
+              <label>Chat-Regel<select id="rule-test-chat"></select></label>
+              <label>Streamer Login (optional)<input id="rule-test-streamer-login" placeholder="sonst aus Regel"></label>
+              <label>Chat-Nachricht (optional)<input id="rule-test-message" placeholder="z. B. hype"></label>
+            </div>
+            <div class="actions-row"><button class="btn btn-secondary" id="run-rule-test-btn">Test berechnen</button></div>
+            <div id="rule-test-results" class="preview-box small-box">Noch kein Regel-Test gelaufen.</div>
+          </div>
+          <div class="panel">
             <h3>Config Import / Export</h3>
-            <p class="help">Vor dem Import am besten erst einen Export ziehen. V1.2 prüft die Datei zuerst und zeigt dir eine kleine Zusammenfassung an.</p>
+            <p class="help">Vor dem Import am besten erst einen Export ziehen. V1.3 prüft die Datei strenger und zeigt dir eine kleine Zusammenfassung an.</p>
             <div class="actions-row actions-stack">
               <button class="btn btn-secondary" id="export-config-btn">Config exportieren</button>
               <select id="import-mode-select">
@@ -163,7 +186,7 @@
         </div>
         <div id="lamp-helper-box" class="preview-box small-box"></div>
         <label class="inline"><input type="checkbox" id="lamp-enabled" checked> Aktiviert</label>
-        <p class="help">Philips Hue ist schon sichtbar vorbereitet, aber absichtlich noch nicht als echter Lampentyp aktiv. V1.2 bleibt bewusst übersichtlich.</p>
+        <p class="help">Philips Hue ist in V1.3 bei der Bridge-Erkennung ein Stück weiter, als echter Lampentyp aber noch bewusst nicht final freigeschaltet.</p>
         <div class="actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div>
         <div id="lamp-diagnostics-box" class="preview-box small-box">Noch keine Diagnose gelaufen.</div>
       </form>

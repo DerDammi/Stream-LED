@@ -1,6 +1,6 @@
 const API = '/api';
 let refreshTimer = null;
-let state = { lamps: [], streamers: [], onlineRules: [], chatRules: [], status: null, logs: [], settings: null, support: null };
+let state = { lamps: [], streamers: [], onlineRules: [], chatRules: [], status: null, logs: [], settings: null, support: null, discoveries: null, lastRuleTest: null };
 
 const RULE_PRESETS = {
   online: [
@@ -93,6 +93,8 @@ function bindForms() {
   byId('reconnect-btn').addEventListener('click', async () => { const data = await api('/auth/twitch/start'); window.open(data.url, '_blank', 'width=720,height=820'); });
   byId('refresh-now-btn').addEventListener('click', refreshAll);
   byId('run-healthcheck-btn')?.addEventListener('click', runHealthcheckNow);
+  byId('discover-lamps-btn')?.addEventListener('click', discoverLampsNow);
+  byId('run-rule-test-btn')?.addEventListener('click', runRuleTestNow);
   byId('export-config-btn').addEventListener('click', exportConfig);
   byId('import-config-input').addEventListener('change', importConfig);
   byId('lamp-type').addEventListener('change', renderLampWizardHelp);
@@ -142,6 +144,7 @@ function renderAll() {
   renderLogs();
   renderSettings();
   fillStreamerSelects();
+  fillRuleTestSelects();
   renderChatRulePreview();
 }
 
@@ -177,7 +180,9 @@ function renderDashboard() {
     `Twitch Chat: ${twitch.connected ? 'verbunden' : 'nicht verbunden'}`,
     `Überwachte Kanäle: ${diagnostics.twitch?.watchedChannels ?? 0}`,
     `Letzter Live-Check: ${formatTime(diagnostics.twitch?.lastOnlinePollSuccessAt)}`,
-    `Healthcheck Lampen: ${formatTime(diagnostics.lamps?.lastHealthCheckSuccessAt)}`
+    `Healthcheck Lampen: ${formatTime(diagnostics.lamps?.lastHealthCheckSuccessAt)}`,
+    `Discovery zuletzt: ${formatTime(diagnostics.lamps?.lastDiscoveryAt)}`,
+    `Regeln bereit: ${state.status?.ruleReadiness?.onlineRulesReady ?? 0} Online · ${state.status?.ruleReadiness?.chatRulesReady ?? 0} Chat`
   ].map((row) => `<div class="status-row"><span>•</span><span>${escapeHtml(row)}</span></div>`).join('');
 
   byId('live-streamers').innerHTML = twitch.onlineStreamers.length ? twitch.onlineStreamers.map((s) => `<span class="chip live">${escapeHtml(s)}</span>`).join('') : '<span class="muted">Niemand live</span>';
@@ -185,7 +190,8 @@ function renderDashboard() {
     `Twitch Auth zuletzt geprüft: ${formatTime(diagnostics.twitch?.lastAuthCheckAt)}`,
     `Chat zuletzt verbunden: ${formatTime(diagnostics.twitch?.lastChatConnectAt)}`,
     `Letzter Chat-Disconnect: ${diagnostics.twitch?.lastChatDisconnectReason ? `${formatTime(diagnostics.twitch?.lastChatDisconnectAt)} · ${escapeHtml(diagnostics.twitch.lastChatDisconnectReason)}` : 'kein Disconnect bekannt'}`,
-    `Letzter Twitch-Fehler: ${escapeHtml(diagnostics.twitch?.lastOnlinePollError || diagnostics.twitch?.lastAuthError || 'kein Fehler gespeichert')}`
+    `Letzter Twitch-Fehler: ${escapeHtml(diagnostics.twitch?.lastOnlinePollError || diagnostics.twitch?.lastAuthError || 'kein Fehler gespeichert')}`,
+    `Letzter Anwendungs-Lauf: ${formatTime(diagnostics.lamps?.lastApplyAt)} · ${escapeHtml(diagnostics.lamps?.lastApplySummary?.dryRun ? 'nur Testmodus' : 'live angewendet')}`
   ].map((row) => `<div class="status-row"><span>•</span><span>${row}</span></div>`).join('');
 
   byId('lamp-status').innerHTML = state.lamps.map((lamp) => {
@@ -312,8 +318,35 @@ window.duplicateChatRule = function(id) {
 };
 
 function renderLogs() { byId('log-list').innerHTML = state.logs.map((log) => `<div class="log-entry"><span>${escapeHtml(log.last_seen)}</span> <strong>${escapeHtml(log.level)}</strong> [${escapeHtml(log.source)}] ${escapeHtml(log.message)} ${log.count > 1 ? `×${log.count}` : ''}</div>`).join('') || '<div class="muted">Keine Logs.</div>'; }
-function renderSettings() { byId('setting-online-poll').value = state.settings.online_poll_seconds; byId('setting-rotation').value = state.settings.rotation_seconds; byId('setting-health').value = state.settings.healthcheck_seconds; }
+function renderSettings() {
+  byId('setting-online-poll').value = state.settings.online_poll_seconds;
+  byId('setting-rotation').value = state.settings.rotation_seconds;
+  byId('setting-health').value = state.settings.healthcheck_seconds;
+  const discoveryBox = byId('discovery-results');
+  if (discoveryBox) {
+    const devices = state.discoveries?.result?.devices || {};
+    const groups = [
+      ...(devices.wled || []).map((item) => `WLED · ${item.name} · ${item.address}`),
+      ...(devices.govee || []).map((item) => `Govee · ${item.name} · ${item.address}`),
+      ...(devices.hue || []).map((item) => `Hue Bridge · ${item.address}`)
+    ];
+    discoveryBox.innerHTML = groups.length ? groups.map((row) => `<div class="status-row"><span>•</span><span>${escapeHtml(row)}</span></div>`).join('') : 'Noch keine Discovery gelaufen.';
+  }
+  const ruleTest = byId('rule-test-results');
+  if (ruleTest) {
+    const actions = state.lastRuleTest?.result?.actions || [];
+    ruleTest.innerHTML = actions.length
+      ? actions.map((entry) => `<div class="status-row"><span>•</span><span>${escapeHtml(`${entry.lamp_name}: ${entry.action === 'color' ? entry.nextState?.color : entry.action === 'effect' ? `Effekt ${entry.nextState?.effect_name}` : entry.action}`)}</span></div>`).join('')
+      : 'Noch kein Regel-Test gelaufen.';
+  }
+}
 function fillStreamerSelects(onlineValue = null, chatValue = null) { const options = ['<option value="">Bitte wählen</option>'].concat(state.streamers.map((s) => `<option value="${s.id}">${escapeHtml(s.login)}</option>`)).join(''); byId('online-rule-streamer').innerHTML = options; byId('chat-rule-streamer').innerHTML = options; if (onlineValue) byId('online-rule-streamer').value = onlineValue; if (chatValue) byId('chat-rule-streamer').value = chatValue; }
+function fillRuleTestSelects() {
+  const online = byId('rule-test-online');
+  const chat = byId('rule-test-chat');
+  if (online) online.innerHTML = ['<option value="">Keine Online-Szene</option>'].concat(state.onlineRules.map((rule) => `<option value="${rule.id}">${escapeHtml(rule.streamer_login)}</option>`)).join('');
+  if (chat) chat.innerHTML = ['<option value="">Keine Chat-Regel</option>'].concat(state.chatRules.map((rule) => `<option value="${rule.id}">${escapeHtml(rule.name)}</option>`)).join('');
+}
 
 function renderTargets(containerId, values = null) {
   const container = byId(containerId);
@@ -452,11 +485,28 @@ function handleLampAddressHelper() {
 }
 
 async function runHealthcheckNow() { await api('/diagnostics/healthcheck', { method: 'POST' }); toast('Healthcheck gestartet.'); await refreshAll(); }
+async function discoverLampsNow() {
+  const address = byId('discovery-address')?.value?.trim();
+  state.discoveries = await api(`/discover/lamps${address ? `?address=${encodeURIComponent(address)}` : ''}`);
+  toast('Discovery abgeschlossen.');
+  renderSettings();
+}
+async function runRuleTestNow() {
+  const payload = {
+    online_rule_id: byId('rule-test-online')?.value || null,
+    chat_rule_id: byId('rule-test-chat')?.value || null,
+    streamer_login: byId('rule-test-streamer-login')?.value?.trim() || null,
+    message: byId('rule-test-message')?.value?.trim() || null
+  };
+  state.lastRuleTest = await api('/rule-test', { method: 'POST', body: JSON.stringify(payload) });
+  toast('Regel-Test berechnet. Keine echte Lampe wurde verändert.');
+  renderSettings();
+}
 
 async function saveLamp(e) {
   e.preventDefault();
   const type = byId('lamp-type').value;
-  if (type === 'hue') return toast('Hue ist in V1.2 bewusst erst vorbereitet, aber noch nicht aktiv.', true);
+  if (type === 'hue') return toast('Hue-Bridge-Erkennung ist drin, als speicherbarer Lampentyp aber noch nicht final freigeschaltet.', true);
   const id = byId('lamp-id').value;
   const payload = { name: byId('lamp-name').value.trim(), type, address: byId('lamp-address').value.trim(), api_key: byId('lamp-api-key').value.trim() || null, enabled: byId('lamp-enabled').checked };
   await api(id ? `/lamps/${id}` : '/lamps', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });

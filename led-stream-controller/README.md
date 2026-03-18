@@ -1,22 +1,23 @@
-# Twitch Lamp Controller V1.2.0
+# Twitch Lamp Controller V1.3.0
 
 Lokales Webinterface für WLED- und Govee-Lampen mit Twitch-Anbindung.
 
-## Was in V1.2.0 besser ist
+## Was in V1.3.0 besser ist
+
+- **praktischere Lampen-Discovery** für WLED, Govee LAN und erste **Hue-Bridge-Erkennung**
+- deutlich mehr **Status- und Diagnose-Sicht** im Dashboard und in den API-Statusdaten
+- neuer **Regel-Testmodus**: Online-Szenen und Chat-Regeln trocken simulieren, ohne echte Lampen umzuschalten
+- mehr Schutz vor **Fehlkonfigurationen** bei Lampen, Streamern, Settings und Importen
+- **Philips Hue** sauber einen Schritt weiter vorbereitet: Bridge-Erkennung ja, kompletter Link-Button-/Lampflow bewusst noch klein gehalten
+- weiterhin noob-freundlich statt unnötig kompliziert
+
+## Was in V1.2.0 besser war
 
 - bessere Lampen-Hilfe direkt im UI, speziell für **WLED** und **Govee**
 - neue **Diagnose-Buttons**: einzelnes Lampen-Diagnose-Check plus globaler Healthcheck direkt im Dashboard
 - geführtere Regel-Erstellung durch kleinen **Regel-Assistenten** für Chat-Regeln
 - komfortablere Ziel-Lampen-Bearbeitung: **auf alle kopieren**, schnelle Vorschau pro Lampe und kompakte Ziel-Zusammenfassung
 - etwas sauberere Vorbereitung für **Philips Hue** im UI-/API-Metadaten-Layer, ohne V1 künstlich aufzublasen
-- weiterhin bewusst noob-freundlich und ohne Framework-Overkill
-
-## Was in V1.1.1 besser war
-
-- sichererer Config-Import mit Vorab-Prüfung, Warnungen und Modus **ersetzen** oder **ergänzen**
-- Import-Hinweis direkt im UI, inklusive Backup-/Export-Tipp und Import-Zusammenfassung
-- kleine Vorlagen für Online-Szenen und Chat-Regeln, damit typische Setups schneller stehen
-- Diagnosefeld im Dashboard für Twitch-Status, Lampen-Checks und letzte Warnungen/Fehler
 
 ## V1 Kernideen
 
@@ -69,42 +70,44 @@ Danach im Webinterface einfach auf **Mit Twitch verbinden** klicken.
 - IP oder Hostname eintragen, z. B. `192.168.1.50` oder `wled-kueche.local`
 - über **Diagnose** prüfst du direkt Erreichbarkeit und Effekt-Erkennung
 - über **Effekte neu laden** wird die Liste direkt aus WLED eingelesen
-- Testfarbe und Testeffekt können direkt in der Lampenliste geschickt werden
+- **Discovery** kann bekannte IPs direkt testen oder einen kleinen LAN-Bereich absuchen
 
 ### Govee
 - IP/Adresse eintragen
 - falls dein Modell/API es braucht, zusätzlich API Key
 - lokale Govee-Effektlisten sind oft Preset-basiert; das ist im UI bewusst so erklärt
-- Diagnose gibt direkte Hinweise bei typischen LAN-/API-Key-Problemen
+- **Discovery** lauscht auf Govee-LAN-Antworten und zeigt gefundene Geräte kompakt an
 
 ### Philips Hue
-- in V1.2 nur vorbereitet, noch **nicht** als produktiver Lampentyp freigeschaltet
-- Ziel war saubere Vorbereitung, nicht halb fertige Hue-Logik
+- V1.3 erkennt jetzt **Hue Bridges** und zeigt an, dass das Gerät grundsätzlich gefunden wurde
+- kompletter Link-Button-/Benutzer-/Lampflow ist noch **nicht final freigeschaltet**
+- Ziel war: sinnvoll vorbereiten, nicht halbgar aufblasen
 
-## Online-Szenen und Chat-Regeln
+## Online-Szenen, Chat-Regeln und Testmodus
 
-### Komfortfunktionen in V1.2
+### Komfortfunktionen
 - **Live-Look auf alle** bzw. **Hype-Look auf alle** als schneller Start
 - **Auf alle kopieren** pro Lampen-Zielkarte
 - **Jetzt testen** direkt aus der Zielkarten-Konfiguration
 - kompakte Zusammenfassung, wie viele Lampen gerade aktiv belegt sind
 
-### Chat-Regel-Assistent
+### Neuer Regel-Testmodus in V1.3
 
-Im Chat-Regel-Dialog gibt es jetzt einen kleinen Assistenten für:
-- soliden Standard
-- schnellen Meme-Trigger
-- stabilen, weniger nervösen Trigger
-- exakte Nachrichtenmatches
+Unter **Einstellungen** kannst du jetzt:
+- eine **Online-Szene** auswählen
+- optional zusätzlich eine **Chat-Regel** auswählen
+- optional eine Chat-Nachricht simulieren
+- das Ergebnis **trocken berechnen**, ohne echte Lampen umzuschalten
 
-Danach lassen sich die Werte natürlich weiter manuell anpassen.
+Das hilft besonders beim Debuggen von Sliding-Window-Regeln.
 
 ## Config Export / Import
 
 Unter **Einstellungen** kannst du die Konfiguration als JSON exportieren oder wieder importieren.
 
-V1.2 kann vor dem Import prüfen:
+V1.3 prüft vor dem Import strenger:
 - ob die JSON-Datei strukturell passt
+- ob Lampen-/Streamer-Daten plausibel aussehen
 - wie viele Lampen, Streamer und Regeln erkannt wurden
 - welche Warnungen es vorab gibt
 
@@ -119,10 +122,12 @@ Im Dashboard siehst du jetzt zusätzlich:
 - Chat-Verbindungsstatus und letzten Disconnect-Hinweis
 - Lampen-Healthchecks pro Lampe
 - letzte Warnungen und Fehler
+- letzten Discovery-Zeitpunkt
+- letzten angewendeten bzw. trocken berechneten Regel-Lauf
 - manuellen **Healthcheck jetzt**-Button
 
 ## Hinweise
 
-- V1.2 bleibt absichtlich einfach: keine unnötige Architektur-Migration
-- Hue ist vorbereitet, aber noch nicht aktiv nutzbar
+- Discovery ist bewusst **praktisch statt magisch**: sie hilft viel, garantiert aber nicht jede exotische Netzkonstellation
+- Hue ist jetzt sinnvoller vorbereitet, aber noch nicht der finale Lampen-Workflow
 - bei **Ersetzen** ist Export vor dem Import weiterhin der sichere Weg
