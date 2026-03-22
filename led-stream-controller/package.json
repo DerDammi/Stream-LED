@@ -1,6 +1,6 @@
 {
   "name": "led-stream-controller",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "description": "Web interface to control WLED/Govee/Hue lamps based on Twitch streamers, emotes, and events",
   "main": "server.js",
   "scripts": {

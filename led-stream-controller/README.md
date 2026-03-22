@@ -2,6 +2,14 @@
 
 Lokales Webinterface für WLED- und Govee-Lampen mit Twitch-Anbindung.
 
+## Was in V1.5.0 besser ist
+
+- **Online-Verhalten jetzt pro Lampe statt global**: wenn mehrere zugewiesene Streamer gleichzeitig live sind, rotiert jede Lampe unabhängig nur zwischen ihren eigenen Live-Zuweisungen
+- jede Online-Zuweisung hat jetzt **eigene Lampen-Szene plus eigenes Rotationsintervall pro Lampe**
+- bestehende Online-Regeln werden beim Laden/Import **vorsichtig migriert**: fehlt ein Rotationswert, wird automatisch die bisherige Standard-Rotation verwendet
+- **Chat-Regeln behalten weiter Vorrang** und übersteuern Online-Zustände lampengenau
+- Dashboard, Testmodus, Import/Export und UI-Texte sind auf das neue Verhalten angepasst
+
 ## Was in V1.4.2 besser ist
 
 - **Twitch OAuth Redirects sind jetzt schlauer**: lokal bevorzugt die App automatisch `localhost`, extern sauber eine konfigurierte `https://`-Adresse
@@ -32,9 +40,9 @@ Lokales Webinterface für WLED- und Govee-Lampen mit Twitch-Anbindung.
 - Docker als Zielplattform
 - Twitch OAuth per Button
 - WLED + Govee
-- Online-Szenen pro Streamer
+- Online-Szenen pro Streamer mit expliziten Lampen-Zuweisungen
 - Chat-Regeln über Sliding Window (`x Treffer in y Sekunden`)
-- online erkannte Streamer rotieren über die Online-Szenen
+- pro Lampe eigene Rotation zwischen den gerade live zugewiesenen Streamern
 
 ## Start lokal
 

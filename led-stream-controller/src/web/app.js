@@ -21,6 +21,7 @@ const byId = (id) => document.getElementById(id);
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const formatTime = (value) => value ? new Date(value).toLocaleString('de-DE') : 'noch nie';
 const effectLabel = (target) => target.mode === 'effect' ? `Effekt ${target.effect_name || '-'}` : `Farbe ${target.color || '#ffffff'}`;
+const rotationLabel = (target) => `${Math.max(5, Number(target?.rotation_seconds || state.settings?.rotation_seconds || 20))}s`;
 
 window.openModal = (id) => document.getElementById(id).classList.remove('hidden');
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
@@ -218,8 +219,9 @@ function renderDashboard() {
   byId('stat-lamps-online').textContent = onlineLampCount;
   byId('stat-chat').textContent = twitch.activeChatRule ? twitch.activeChatRule.name : '-';
   byId('stat-chat-detail').textContent = twitch.activeChatRule ? `${twitch.activeChatRule.currentMatches}/${twitch.activeChatRule.minMatches} Treffer in ${twitch.activeChatRule.windowSeconds}s` : 'kein Trigger aktiv';
-  byId('stat-rotation').textContent = twitch.activeOnlineRule ? twitch.activeOnlineRule.streamer_login : '-';
-  byId('stat-rotation-detail').textContent = twitch.activeOnlineRule ? 'diese Online-Szene läuft gerade' : 'keine Online-Szene aktiv';
+  const liveOnlineRules = twitch.activeOnlineRules || [];
+  byId('stat-rotation').textContent = liveOnlineRules.length ? `${liveOnlineRules.length} live` : '-';
+  byId('stat-rotation-detail').textContent = liveOnlineRules.length ? `${liveOnlineRules.map((rule) => rule.streamer_login).join(', ')} aktiv · pro Lampe eigene Rotation` : 'keine Online-Szene aktiv';
 
   const checklist = [
     { ok: state.streamers.length > 0, text: 'Mindestens 1 Streamer angelegt' },
@@ -234,7 +236,8 @@ function renderDashboard() {
     `Letzter Live-Check: ${formatTime(diagnostics.twitch?.lastOnlinePollSuccessAt)}`,
     `Healthcheck Lampen: ${formatTime(diagnostics.lamps?.lastHealthCheckSuccessAt)}`,
     `Discovery zuletzt: ${formatTime(diagnostics.lamps?.lastDiscoveryAt)}`,
-    `Regeln bereit: ${state.status?.ruleReadiness?.onlineRulesReady ?? 0} Online · ${state.status?.ruleReadiness?.chatRulesReady ?? 0} Chat`
+    `Regeln bereit: ${state.status?.ruleReadiness?.onlineRulesReady ?? 0} Online · ${state.status?.ruleReadiness?.chatRulesReady ?? 0} Chat`,
+    `Live-Online-Regeln: ${(twitch.activeOnlineRules || []).length} · Rotation jetzt pro Lampe`
   ].map((row) => `<div class="status-row"><span>•</span><span>${escapeHtml(row)}</span></div>`).join('');
 
   byId('live-streamers').innerHTML = twitch.onlineStreamers.length ? twitch.onlineStreamers.map((s) => `<span class="chip live">${escapeHtml(s)}</span>`).join('') : '<span class="muted">Niemand live</span>';
@@ -258,8 +261,9 @@ function renderDashboard() {
     const runtime = state.status?.lamps?.[lamp.id];
     const source = runtime?.state?.source || 'kein aktiver Zustand';
     const detail = runtime?.state?.mode === 'effect' ? `Effekt ${runtime.state.effect_name || '-'} · Speed ${runtime.state.effect_speed} · Intensität ${runtime.state.effect_intensity}` : runtime?.state?.color ? `Farbe ${runtime.state.color}` : 'wartet auf Szene oder Regel';
+    const rotation = runtime?.state?.source?.startsWith('online:') ? ` · Rotation ${rotationLabel(runtime.state)}` : '';
     const diag = runtime?.diagnostics;
-    return `<div class="card comfort-card"><div><strong>${escapeHtml(lamp.name)}</strong><div class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${escapeHtml(lamp.address)} · ${lamp.last_seen ? 'online' : 'offline'}</div><div class="meta">Quelle: ${escapeHtml(source)}</div><div class="meta">${escapeHtml(detail)}</div><div class="meta">Diagnose: letzter Check ${formatTime(diag?.checkedAt)} · ${diag?.error ? escapeHtml(diag.error) : 'ok'}</div></div></div>`;
+    return `<div class="card comfort-card"><div><strong>${escapeHtml(lamp.name)}</strong><div class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${escapeHtml(lamp.address)} · ${lamp.last_seen ? 'online' : 'offline'}</div><div class="meta">Quelle: ${escapeHtml(source)}</div><div class="meta">${escapeHtml(detail)}${escapeHtml(rotation)}</div><div class="meta">Diagnose: letzter Check ${formatTime(diag?.checkedAt)} · ${diag?.error ? escapeHtml(diag.error) : 'ok'}</div></div></div>`;
   }).join('') || '<div class="muted">Keine Lampen</div>';
 
   byId('diagnostics-errors').innerHTML = (diagnostics.recentErrors || []).map((log) => `<div class="log-entry"><span>${escapeHtml(log.last_seen)}</span> <strong>${escapeHtml(log.level)}</strong> [${escapeHtml(log.source)}] ${escapeHtml(log.message)}</div>`).join('') || '<div class="muted">Zuletzt keine Warnungen oder Fehler.</div>';
@@ -324,7 +328,7 @@ function renderStreamers() {
 window.editStreamer = function(id) { const s = state.streamers.find((x) => x.id === id); if (!s) return; byId('streamer-id').value = s.id; byId('streamer-login').value = s.login; byId('streamer-enabled').checked = s.enabled; openModal('streamer-modal'); };
 
 function renderOnlineRules() {
-  byId('online-rule-list').innerHTML = state.onlineRules.map((rule) => `<div class="card comfort-card"><div><strong>${escapeHtml(rule.streamer_login)}</strong><div class="meta">${rule.targets.length} Lampen · ${rule.enabled ? 'aktiv' : 'inaktiv'}</div><div class="meta">${escapeHtml(summarizeTargets(rule.targets))}</div></div><div class="actions"><button class="btn btn-secondary" onclick="editOnlineRule('${rule.id}')">Bearbeiten</button><button class="btn btn-danger" onclick="deleteEntity('/online-rules/${rule.id}')">Löschen</button></div></div>`).join('') || '<div class="muted">Noch keine Online-Szenen.</div>';
+  byId('online-rule-list').innerHTML = state.onlineRules.map((rule) => `<div class="card comfort-card"><div><strong>${escapeHtml(rule.streamer_login)}</strong><div class="meta">${rule.targets.length} Lampen · ${rule.enabled ? 'aktiv' : 'inaktiv'} · eigene Rotation pro Lampen-Ziel</div><div class="meta">${escapeHtml(summarizeTargets(rule.targets, { includeRotation: true }))}</div></div><div class="actions"><button class="btn btn-secondary" onclick="editOnlineRule('${rule.id}')">Bearbeiten</button><button class="btn btn-danger" onclick="deleteEntity('/online-rules/${rule.id}')">Löschen</button></div></div>`).join('') || '<div class="muted">Noch keine Online-Szenen.</div>';
 }
 window.editOnlineRule = function(id) {
   const rule = state.onlineRules.find((x) => x.id === id); if (!rule) return;
@@ -401,7 +405,7 @@ function renderSettings() {
     const actions = state.lastRuleTest?.result?.actions || [];
     const conflicts = state.lastRuleTest?.result?.conflicts || [];
     ruleTest.innerHTML = actions.length
-      ? actions.map((entry) => `<div class="status-row"><span>•</span><span>${escapeHtml(`${entry.lamp_name}: ${entry.action === 'color' ? entry.nextState?.color : entry.action === 'effect' ? `Effekt ${entry.nextState?.effect_name}` : entry.action}`)}</span></div>`).join('') + (conflicts.length ? `<div class="priority-box"><strong>Priorität:</strong> Chat-Regeln gewinnen bei Konflikten. ${conflicts.map((c) => escapeHtml(c.lamp_name)).join(', ')}</div>` : '')
+      ? actions.map((entry) => `<div class="status-row"><span>•</span><span>${escapeHtml(`${entry.lamp_name}: ${entry.action === 'color' ? entry.nextState?.color : entry.action === 'effect' ? `Effekt ${entry.nextState?.effect_name}` : entry.action}${entry.nextState?.source?.startsWith('online:') ? ` · ${rotationLabel(entry.nextState)}` : ''}`)}</span></div>`).join('') + (conflicts.length ? `<div class="priority-box"><strong>Priorität:</strong> Chat-Regeln gewinnen bei Konflikten. ${conflicts.map((c) => escapeHtml(c.lamp_name)).join(', ')}</div>` : '')
       : 'Noch kein Regel-Test gelaufen.';
   }
 }
@@ -416,7 +420,7 @@ function fillRuleTestSelects() {
 function renderTargets(containerId, values = null) {
   const container = byId(containerId);
   if (!state.lamps.length) { container.innerHTML = '<div class="muted">Bitte erst Lampen anlegen.</div>'; return; }
-  const current = values || state.lamps.map((lamp) => ({ lamp_id: lamp.id, enabled: false, mode: 'static', color: '#9147ff', effect_name: '', effect_speed: 128, effect_intensity: 128 }));
+  const current = values || state.lamps.map((lamp) => ({ lamp_id: lamp.id, enabled: false, mode: 'static', color: '#9147ff', effect_name: '', effect_speed: 128, effect_intensity: 128, rotation_seconds: Number(state.settings?.rotation_seconds || 20) }));
   container.innerHTML = state.lamps.map((lamp) => {
     const target = current.find((x) => x.lamp_id === lamp.id) || { lamp_id: lamp.id, enabled: false, mode: 'static', color: '#9147ff', effect_name: '', effect_speed: 128, effect_intensity: 128 };
     const effects = (lamp.effects || []).map((fx) => { const value = String(fx.id ?? fx.name); return `<option value="${escapeHtml(value)}" ${value === String(target.effect_name || '') ? 'selected' : ''}>${escapeHtml(fx.name ?? fx.id)}</option>`; }).join('');
@@ -432,6 +436,7 @@ function renderTargets(containerId, values = null) {
         <label>Effekt<select data-field="effect_name" data-lamp="${lamp.id}"><option value="">Bitte wählen</option>${effects}</select></label>
         <label>Speed<input type="range" min="0" max="255" value="${Number(target.effect_speed || 128)}" data-field="effect_speed" data-lamp="${lamp.id}"></label>
         <label>Intensität<input type="range" min="0" max="255" value="${Number(target.effect_intensity || 128)}" data-field="effect_intensity" data-lamp="${lamp.id}"></label>
+        <label>Rotation (Sek.)<input type="number" min="5" max="600" value="${Math.max(5, Number(target.rotation_seconds || state.settings?.rotation_seconds || 20))}" data-field="rotation_seconds" data-lamp="${lamp.id}"></label>
         <div class="target-actions">
           <button type="button" class="btn btn-ghost" onclick="copyTargetToAll('${containerId}','${lamp.id}')">Auf alle kopieren</button>
           <button type="button" class="btn btn-ghost" onclick="previewTarget('${lamp.id}','${containerId}')">Jetzt testen</button>
@@ -461,7 +466,8 @@ function readTarget(containerId, lampId) {
     color: byId(containerId).querySelector(`[data-field="color"][data-lamp="${lampId}"]`).value,
     effect_name: byId(containerId).querySelector(`[data-field="effect_name"][data-lamp="${lampId}"]`).value,
     effect_speed: Number(byId(containerId).querySelector(`[data-field="effect_speed"][data-lamp="${lampId}"]`).value),
-    effect_intensity: Number(byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lampId}"]`).value)
+    effect_intensity: Number(byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lampId}"]`).value),
+    rotation_seconds: Number(byId(containerId).querySelector(`[data-field="rotation_seconds"][data-lamp="${lampId}"]`)?.value || state.settings?.rotation_seconds || 20)
   };
 }
 
@@ -473,6 +479,7 @@ function bulkSetTargets(containerId, presetTarget) {
     const effect = byId(containerId).querySelector(`[data-field="effect_name"][data-lamp="${lamp.id}"]`);
     const speed = byId(containerId).querySelector(`[data-field="effect_speed"][data-lamp="${lamp.id}"]`);
     const intensity = byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lamp.id}"]`);
+    const rotation = byId(containerId).querySelector(`[data-field="rotation_seconds"][data-lamp="${lamp.id}"]`);
     if (enabled) enabled.checked = true;
     if (mode && presetTarget.mode) mode.value = presetTarget.mode;
     if (color && presetTarget.color) color.value = presetTarget.color;
@@ -482,6 +489,7 @@ function bulkSetTargets(containerId, presetTarget) {
     }
     if (speed && presetTarget.effect_speed != null) speed.value = presetTarget.effect_speed;
     if (intensity && presetTarget.effect_intensity != null) intensity.value = presetTarget.effect_intensity;
+    if (rotation) rotation.value = presetTarget.rotation_seconds != null ? presetTarget.rotation_seconds : Number(state.settings?.rotation_seconds || 20);
   });
   updateTargetSummary(containerId, containerId === 'online-rule-targets' ? 'online-target-summary' : 'chat-target-summary');
 }
@@ -489,7 +497,8 @@ function bulkSetTargets(containerId, presetTarget) {
 function updateTargetSummary(containerId, summaryId) {
   const targets = collectTargets(containerId);
   const box = byId(summaryId);
-  if (box) box.innerHTML = targets.length ? `${targets.length} Lampen aktiv · ${escapeHtml(targets.map(effectLabel).slice(0, 3).join(' · '))}${targets.length > 3 ? ' …' : ''}` : 'Noch keine Lampe ausgewählt.';
+  const includeRotation = containerId === 'online-rule-targets';
+  if (box) box.innerHTML = targets.length ? `${targets.length} Lampen aktiv · ${escapeHtml(targets.map((target) => includeRotation ? `${effectLabel(target)} · ${rotationLabel(target)}` : effectLabel(target)).slice(0, 3).join(' · '))}${targets.length > 3 ? ' …' : ''}` : 'Noch keine Lampe ausgewählt.';
 }
 
 function applyPresetTarget(containerId, presetTarget) { bulkSetTargets(containerId, presetTarget); }
@@ -500,11 +509,11 @@ function collectTargets(containerId) {
   return state.lamps.map((lamp) => {
     const enabled = byId(containerId).querySelector(`[data-field="enabled"][data-lamp="${lamp.id}"]`)?.checked;
     if (!enabled) return null;
-    return { lamp_id: lamp.id, mode: byId(containerId).querySelector(`[data-field="mode"][data-lamp="${lamp.id}"]`).value, color: byId(containerId).querySelector(`[data-field="color"][data-lamp="${lamp.id}"]`).value, effect_name: byId(containerId).querySelector(`[data-field="effect_name"][data-lamp="${lamp.id}"]`).value, effect_speed: Number(byId(containerId).querySelector(`[data-field="effect_speed"][data-lamp="${lamp.id}"]`).value), effect_intensity: Number(byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lamp.id}"]`).value) };
+    return { lamp_id: lamp.id, mode: byId(containerId).querySelector(`[data-field="mode"][data-lamp="${lamp.id}"]`).value, color: byId(containerId).querySelector(`[data-field="color"][data-lamp="${lamp.id}"]`).value, effect_name: byId(containerId).querySelector(`[data-field="effect_name"][data-lamp="${lamp.id}"]`).value, effect_speed: Number(byId(containerId).querySelector(`[data-field="effect_speed"][data-lamp="${lamp.id}"]`).value), effect_intensity: Number(byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lamp.id}"]`).value), rotation_seconds: Number(byId(containerId).querySelector(`[data-field="rotation_seconds"][data-lamp="${lamp.id}"]`)?.value || state.settings?.rotation_seconds || 20) };
   }).filter(Boolean);
 }
 
-function summarizeTargets(targets = []) { if (!targets.length) return 'keine Lampen gewählt'; return targets.map((target) => { const lamp = state.lamps.find((entry) => entry.id === target.lamp_id); const name = lamp?.name || target.lamp_id; return `${name}: ${effectLabel(target)}`; }).join(' · '); }
+function summarizeTargets(targets = [], options = {}) { if (!targets.length) return 'keine Lampen gewählt'; return targets.map((target) => { const lamp = state.lamps.find((entry) => entry.id === target.lamp_id); const name = lamp?.name || target.lamp_id; return `${name}: ${effectLabel(target)}${options.includeRotation ? ` · ${rotationLabel(target)}` : ''}`; }).join(' · '); }
 
 function renderChatRulePreview() {
   const text = byId('chat-rule-text')?.value?.trim() || 'Kappa';

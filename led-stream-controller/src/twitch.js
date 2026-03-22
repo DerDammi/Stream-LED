@@ -11,8 +11,7 @@ class TwitchIntegration {
     this.chatWindows = new Map(); // ruleId -> timestamps[]
     this.lastFingerprint = '';
     this.oauthStates = new Map();
-    this.rotationIndex = 0;
-    this.rotationTimer = null;
+    this.onlineRotationStartedAt = Date.now();
     this.diagnostics = {
       initializedAt: null,
       lastInitSuccessAt: null,
@@ -53,10 +52,14 @@ class TwitchIntegration {
     this.diagnostics.lastAuthCheckAt = new Date().toISOString();
     this.diagnostics.lastAuthError = null;
     await this.connectChat();
-    this.startRotation();
+    this.resetOnlineRotationClock();
     this.diagnostics.lastInitSuccessAt = new Date().toISOString();
     this.diagnostics.lastInitError = null;
     return true;
+  }
+
+  resetOnlineRotationClock() {
+    this.onlineRotationStartedAt = Date.now();
   }
 
   getConfiguredBaseUrl() {
@@ -326,38 +329,41 @@ class TwitchIntegration {
       this.diagnostics.lastOnlinePollError = message;
       throw new Error(message);
     }
-    const live = new Set((data?.data || []).map((s) => s.user_login.toLowerCase()));
-    this.onlineStreamers = live;
+    const nextLive = new Set((data?.data || []).map((s) => s.user_login.toLowerCase()));
+    const previousSorted = [...this.onlineStreamers].sort().join('|');
+    const nextSorted = [...nextLive].sort().join('|');
+    if (previousSorted !== nextSorted) this.resetOnlineRotationClock();
+    this.onlineStreamers = nextLive;
     this.diagnostics.lastOnlinePollSuccessAt = new Date().toISOString();
     this.diagnostics.lastOnlinePollError = null;
-    return [...live];
+    return [...nextLive];
   }
 
-  getActiveOnlineRule() {
-    const onlineRules = db.getAllOnlineRules().filter((rule) => rule.enabled && this.onlineStreamers.has(rule.streamer_login));
-    if (!onlineRules.length) return null;
-    const rule = onlineRules[this.rotationIndex % onlineRules.length];
-    return rule || null;
+  getActiveOnlineRules() {
+    return db.getAllOnlineRules()
+      .filter((rule) => rule.enabled && this.onlineStreamers.has(rule.streamer_login))
+      .sort((a, b) => String(a.streamer_login || '').localeCompare(String(b.streamer_login || '')) || String(a.id).localeCompare(String(b.id)));
   }
 
-  startRotation() {
-    if (this.rotationTimer) clearInterval(this.rotationTimer);
-    const seconds = Math.max(5, db.getSetting('rotation_seconds', 20));
-    this.rotationTimer = setInterval(() => {
-      this.rotationIndex += 1;
-    }, seconds * 1000);
+  getOnlineState() {
+    return {
+      activeRules: this.getActiveOnlineRules(),
+      onlineStreamers: [...this.onlineStreamers],
+      rotationStartedAt: this.onlineRotationStartedAt,
+      now: Date.now()
+    };
   }
 
   async tick() {
     const chatRule = this.getActiveChatRule();
-    const onlineRule = this.getActiveOnlineRule();
-    await this.effectManager.applyResolvedState({ onlineRule, chatRule });
-    return { chatRule, onlineRule };
+    const onlineState = this.getOnlineState();
+    await this.effectManager.applyResolvedState({ onlineState, chatRule });
+    return { chatRule, onlineState };
   }
 
   getStatus() {
     const activeChatRule = this.getActiveChatRule();
-    const activeOnlineRule = this.getActiveOnlineRule();
+    const activeOnlineRules = this.getActiveOnlineRules();
     return {
       connected: !!this.chatClient,
       auth: this.auth ? { login: this.auth.login, expires_at: this.auth.expires_at || null } : null,
@@ -371,16 +377,17 @@ class TwitchIntegration {
         minMatches: activeChatRule.min_matches,
         windowSeconds: activeChatRule.window_seconds
       } : null,
-      activeOnlineRule: activeOnlineRule ? {
-        id: activeOnlineRule.id,
-        streamer_login: activeOnlineRule.streamer_login
+      activeOnlineRule: activeOnlineRules[0] ? {
+        id: activeOnlineRules[0].id,
+        streamer_login: activeOnlineRules[0].streamer_login,
+        multiLampRotation: activeOnlineRules.length > 1
       } : null,
+      activeOnlineRules: activeOnlineRules.map((rule) => ({ id: rule.id, streamer_login: rule.streamer_login, targetCount: Array.isArray(rule.targets) ? rule.targets.length : 0 })),
       diagnostics: { ...this.diagnostics, watchedChannels: this.getChannels().length }
     };
   }
 
   async destroy() {
-    if (this.rotationTimer) clearInterval(this.rotationTimer);
     if (this.chatClient) {
       try { await this.chatClient.disconnect(); } catch {}
     }

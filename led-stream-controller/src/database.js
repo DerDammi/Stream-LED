@@ -282,7 +282,12 @@ function parseLamp(row) {
   return { ...row, enabled: !!row.enabled, effects: JSON.parse(row.effects_json || '[]'), metadata: JSON.parse(row.metadata_json || '{}') };
 }
 function parseTargetsRule(row) {
-  return { ...row, enabled: !!row.enabled, targets: JSON.parse(row.targets_json || '[]') };
+  const fallbackRotation = getSetting('rotation_seconds', 20);
+  const targets = JSON.parse(row.targets_json || '[]').map((target) => ({
+    ...target,
+    rotation_seconds: Math.max(5, Number(target?.rotation_seconds || fallbackRotation || 20))
+  }));
+  return { ...row, enabled: !!row.enabled, targets };
 }
 
 function log(level, source, message) {

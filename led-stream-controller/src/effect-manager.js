@@ -170,32 +170,81 @@ class EffectManager {
     };
   }
 
-  async applyResolvedState({ onlineRule, chatRule, dryRun = false }) {
-    const lamps = db.getAllLamps().filter((lamp) => lamp.enabled && lamp.last_seen);
-    const desired = new Map();
-    if (onlineRule?.targets?.length) {
-      this.runtime.activeOnlineStreamer = onlineRule.streamer_login;
-      for (const target of onlineRule.targets) desired.set(target.lamp_id, { ...target, source: `online:${onlineRule.streamer_login}` });
-    } else {
-      this.runtime.activeOnlineStreamer = null;
+  resolveLampOnlineTarget(lamp, onlineState = {}) {
+    const activeRules = Array.isArray(onlineState.activeRules) ? onlineState.activeRules : [];
+    const candidates = activeRules
+      .map((rule) => {
+        const target = (Array.isArray(rule.targets) ? rule.targets : []).find((entry) => entry.lamp_id === lamp.id);
+        if (!target) return null;
+        return {
+          ...target,
+          source: `online:${rule.streamer_login}`,
+          streamer_login: rule.streamer_login,
+          rule_id: rule.id,
+          rotation_seconds: Math.max(5, Number(target.rotation_seconds || db.getSetting('rotation_seconds', 20) || 20))
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => String(a.streamer_login || '').localeCompare(String(b.streamer_login || '')) || String(a.rule_id).localeCompare(String(b.rule_id)));
+
+    if (!candidates.length) return null;
+    if (candidates.length === 1) return { selected: candidates[0], candidates };
+
+    const startMs = Number(onlineState.rotationStartedAt || Date.now());
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+    const totalCycle = candidates.reduce((sum, item) => sum + Math.max(5, Number(item.rotation_seconds || 20)), 0);
+    let position = totalCycle > 0 ? elapsedSeconds % totalCycle : 0;
+    let selected = candidates[0];
+    for (const item of candidates) {
+      const stay = Math.max(5, Number(item.rotation_seconds || 20));
+      if (position < stay) {
+        selected = item;
+        break;
+      }
+      position -= stay;
     }
+    return { selected, candidates };
+  }
+
+  async applyResolvedState({ onlineState, chatRule, dryRun = false }) {
+    const lamps = db.getAllLamps().filter((lamp) => lamp.enabled && lamp.last_seen);
+    const activeOnlineRules = Array.isArray(onlineState?.activeRules) ? onlineState.activeRules : [];
+    const activeOnlineStreamers = [...new Set(activeOnlineRules.map((rule) => rule.streamer_login).filter(Boolean))];
+    this.runtime.activeOnlineStreamer = activeOnlineStreamers.length ? activeOnlineStreamers.join(', ') : null;
+
     if (chatRule?.targets?.length) {
       this.runtime.activeChatRuleId = chatRule.id;
       this.runtime.activeChatRuleName = chatRule.name;
-      for (const target of chatRule.targets) desired.set(target.lamp_id, { ...target, source: `chat:${chatRule.name}` });
     } else {
       this.runtime.activeChatRuleId = null;
       this.runtime.activeChatRuleName = null;
     }
 
+    const desired = new Map();
+    const onlineCandidatesByLamp = new Map();
+    for (const lamp of lamps) {
+      const resolvedOnline = this.resolveLampOnlineTarget(lamp, onlineState);
+      if (resolvedOnline) {
+        onlineCandidatesByLamp.set(lamp.id, resolvedOnline.candidates);
+        desired.set(lamp.id, resolvedOnline.selected);
+      }
+    }
+
     const conflicts = [];
-    if (onlineRule?.targets?.length && chatRule?.targets?.length) {
-      const onlineTargets = new Map(onlineRule.targets.map((target) => [target.lamp_id, target]));
+    if (chatRule?.targets?.length) {
       for (const target of chatRule.targets) {
-        if (onlineTargets.has(target.lamp_id)) {
+        const onlineCandidates = onlineCandidatesByLamp.get(target.lamp_id) || [];
+        if (onlineCandidates.length) {
           const lamp = db.getLamp(target.lamp_id);
-          conflicts.push({ lamp_id: target.lamp_id, lamp_name: lamp?.name || target.lamp_id, online_source: `online:${onlineRule.streamer_login}`, chat_source: `chat:${chatRule.name}`, winner: 'chat' });
+          conflicts.push({
+            lamp_id: target.lamp_id,
+            lamp_name: lamp?.name || target.lamp_id,
+            online_sources: onlineCandidates.map((entry) => entry.source),
+            chat_source: `chat:${chatRule.name}`,
+            winner: 'chat'
+          });
         }
+        desired.set(target.lamp_id, { ...target, source: `chat:${chatRule.name}` });
       }
     }
 
@@ -217,7 +266,9 @@ class EffectManager {
         color: target.color || '#ffffff',
         effect_name: target.effect_name || '',
         effect_speed: Number(target.effect_speed || 128),
-        effect_intensity: Number(target.effect_intensity || 128)
+        effect_intensity: Number(target.effect_intensity || 128),
+        rotation_seconds: Number(target.rotation_seconds || db.getSetting('rotation_seconds', 20) || 20),
+        streamer_login: target.streamer_login || null
       };
       const prev = this.runtime.lampStates.get(lamp.id);
       if (JSON.stringify(prev) === JSON.stringify(nextState)) {
@@ -234,8 +285,24 @@ class EffectManager {
       this.runtime.lampStates.set(lamp.id, nextState);
     }
     this.runtime.diagnostics.lastApplyAt = new Date().toISOString();
-    this.runtime.diagnostics.lastApplySummary = { onlineRule: onlineRule ? onlineRule.streamer_login : null, chatRule: chatRule ? chatRule.name : null, priority: 'chat-overrides-online', conflicts, actions: actions.length, dryRun };
-    return { onlineRule: onlineRule ? { id: onlineRule.id, streamer_login: onlineRule.streamer_login } : null, chatRule: chatRule ? { id: chatRule.id, name: chatRule.name } : null, conflicts, priority: 'chat-overrides-online', actions, dryRun };
+    this.runtime.diagnostics.lastApplySummary = {
+      onlineRule: activeOnlineStreamers.length ? activeOnlineStreamers : null,
+      chatRule: chatRule ? chatRule.name : null,
+      priority: 'chat-overrides-online',
+      conflicts,
+      actions: actions.length,
+      dryRun,
+      perLampRotation: true,
+      liveOnlineRules: activeOnlineRules.length
+    };
+    return {
+      onlineRule: activeOnlineStreamers.length ? { streamer_login: activeOnlineStreamers.join(', '), streamer_logins: activeOnlineStreamers } : null,
+      chatRule: chatRule ? { id: chatRule.id, name: chatRule.name } : null,
+      conflicts,
+      priority: 'chat-overrides-online',
+      actions,
+      dryRun
+    };
   }
 
   async previewTarget(target, options = {}) {

@@ -8,6 +8,13 @@ function clampByte(value, fallback = 128) {
   return Math.max(0, Math.min(255, Math.round(num)));
 }
 
+function clampRotationSeconds(value, fallback = null) {
+  const base = fallback == null ? db.getSetting('rotation_seconds', 20) : fallback;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return Math.max(5, Number(base || 20));
+  return Math.max(5, Math.min(600, Math.round(num)));
+}
+
 function normalizeAddress(value = '') {
   return String(value || '').trim().replace(/^https?:\/\//, '').replace(/\/json.*$/, '').replace(/\/$/, '');
 }
@@ -19,7 +26,8 @@ function sanitizeTargets(targets = []) {
     color: /^#[0-9a-f]{6}$/i.test(String(target.color || '')) ? String(target.color) : '#9147ff',
     effect_name: target.effect_name == null ? '' : String(target.effect_name),
     effect_speed: clampByte(target.effect_speed),
-    effect_intensity: clampByte(target.effect_intensity)
+    effect_intensity: clampByte(target.effect_intensity),
+    rotation_seconds: clampRotationSeconds(target.rotation_seconds)
   }));
 }
 
@@ -91,7 +99,7 @@ function validateSettingsPayload(payload = {}) {
     public_base_url: payload.public_base_url == null ? undefined : String(payload.public_base_url || '').trim().replace(/\/$/, '')
   };
   if (!Number.isFinite(next.online_poll_seconds) || next.online_poll_seconds < 10 || next.online_poll_seconds > 600) throw new Error('Online Polling muss zwischen 10 und 600 Sekunden liegen.');
-  if (!Number.isFinite(next.rotation_seconds) || next.rotation_seconds < 5 || next.rotation_seconds > 600) throw new Error('Rotation muss zwischen 5 und 600 Sekunden liegen.');
+  if (!Number.isFinite(next.rotation_seconds) || next.rotation_seconds < 5 || next.rotation_seconds > 600) throw new Error('Standard-Rotation muss zwischen 5 und 600 Sekunden liegen.');
   if (!Number.isFinite(next.healthcheck_seconds) || next.healthcheck_seconds < 10 || next.healthcheck_seconds > 600) throw new Error('Healthcheck muss zwischen 10 und 600 Sekunden liegen.');
   if (next.public_base_url !== undefined && next.public_base_url !== '' && !/^https?:\/\//i.test(next.public_base_url)) throw new Error('Öffentliche Basis-URL muss mit http:// oder https:// beginnen.');
   return next;
@@ -99,7 +107,7 @@ function validateSettingsPayload(payload = {}) {
 
 function snapshotConfig() {
   return {
-    version: 5,
+    version: 6,
     exported_at: new Date().toISOString(),
     settings: {
       online_poll_seconds: db.getSetting('online_poll_seconds', 30),
@@ -118,7 +126,7 @@ function analyzeImportPayload(payload) {
   const warnings = [];
   const errors = [];
   const safe = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
-  const summary = { lamps: Array.isArray(safe.lamps) ? safe.lamps.length : 0, streamers: Array.isArray(safe.streamers) ? safe.streamers.length : 0, onlineRules: Array.isArray(safe.onlineRules) ? safe.onlineRules.length : 0, chatRules: Array.isArray(safe.chatRules) ? safe.chatRules.length : 0, hasTwitchApp: !!(safe.twitch_app?.client_id || safe.twitch_app?.client_secret) };
+  const summary = { lamps: Array.isArray(safe.lamps) ? safe.lamps.length : 0, streamers: Array.isArray(safe.streamers) ? safe.streamers.length : 0, onlineRules: Array.isArray(safe.onlineRules) ? safe.onlineRules.length : 0, chatRules: Array.isArray(safe.chatRules) ? safe.chatRules.length : 0, hasTwitchApp: !!(safe.twitch_app?.client_id || safe.twitch_app?.client_secret), version: safe.version || null };
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     errors.push('Die Datei enthält kein gültiges JSON-Objekt.');
     return { ok: false, errors, warnings, summary };
@@ -132,6 +140,10 @@ function analyzeImportPayload(payload) {
   for (const rule of Array.isArray(payload.onlineRules) ? payload.onlineRules : []) {
     if (!String(rule.streamer_login || '').trim()) errors.push('Eine Online-Szene hat keinen streamer_login.');
     if (!Array.isArray(rule.targets) || rule.targets.length === 0) warnings.push(`Online-Szene für ${String(rule.streamer_login || 'unbekannt')} hat keine Ziel-Lampen.`);
+    for (const target of Array.isArray(rule.targets) ? rule.targets : []) {
+      const rotation = Number(target?.rotation_seconds);
+      if (target && target.lamp_id && Number.isFinite(rotation) && (rotation < 5 || rotation > 600)) warnings.push(`Online-Szene für ${String(rule.streamer_login || 'unbekannt')} hat eine Lampen-Rotation außerhalb 5-600s und wird beim Import gekappt.`);
+    }
   }
   for (const rule of Array.isArray(payload.chatRules) ? payload.chatRules : []) {
     if (!String(rule.name || '').trim()) warnings.push('Eine Chat-Regel hat keinen Namen und wird mit Fallback-Namen importiert.');
@@ -139,6 +151,7 @@ function analyzeImportPayload(payload) {
     if (!String(rule.match_text || '').trim()) errors.push(`Chat-Regel ${String(rule.name || 'ohne Namen')} hat keinen Match-Text.`);
   }
   if (summary.lamps === 0 && summary.streamers === 0 && summary.onlineRules === 0 && summary.chatRules === 0) warnings.push('Die Datei enthält keine Lampen, Streamer oder Regeln.');
+  if (!summary.version || summary.version < 6) warnings.push('Ältere Config erkannt. Online-Rotationen pro Lampe werden mit der Standard-Rotation aus den Einstellungen ergänzt.');
   return { ok: errors.length === 0, errors, warnings, summary };
 }
 
@@ -174,7 +187,7 @@ function applyImportPayload(payload, mode = 'replace') {
   const resolveTarget = (target) => {
     const lampId = target.lamp_id || lampMap.get(`${target.lamp_name || ''}|${target.lamp_address || ''}`) || null;
     if (!lampId || !db.getLamp(lampId)) return null;
-    return { lamp_id: lampId, mode: target.mode === 'effect' ? 'effect' : 'static', color: String(target.color || '#9147ff'), effect_name: target.effect_name == null ? '' : String(target.effect_name), effect_speed: clampByte(target.effect_speed), effect_intensity: clampByte(target.effect_intensity) };
+    return { lamp_id: lampId, mode: target.mode === 'effect' ? 'effect' : 'static', color: String(target.color || '#9147ff'), effect_name: target.effect_name == null ? '' : String(target.effect_name), effect_speed: clampByte(target.effect_speed), effect_intensity: clampByte(target.effect_intensity), rotation_seconds: clampRotationSeconds(target.rotation_seconds) };
   };
   for (const rule of Array.isArray(payload.onlineRules) ? payload.onlineRules : []) {
     const streamer_id = streamerMap.get(String(rule.streamer_login || '').trim().toLowerCase()) || db.getAllStreamers().find((entry) => entry.login === String(rule.streamer_login || '').trim().toLowerCase())?.id;
@@ -202,7 +215,8 @@ function createRuleTestReport({ twitch, effectManager, onlineRuleId, chatRuleId,
     const simulatedMessage = String(message || chatRule.match_text).trim();
     twitch.handleChatMessage(simulatedLogin, simulatedMessage);
   }
-  return effectManager.applyResolvedState({ onlineRule, chatRule: chatRule && twitch.isChatRuleActive(chatRule) ? chatRule : null, dryRun: true });
+  const onlineState = onlineRule ? { activeRules: [onlineRule], rotationStartedAt: Date.now() } : { activeRules: [], rotationStartedAt: Date.now() };
+  return effectManager.applyResolvedState({ onlineState, chatRule: chatRule && twitch.isChatRuleActive(chatRule) ? chatRule : null, dryRun: true });
 }
 
 function createApiRouter(effectManager, twitch) {
@@ -230,11 +244,7 @@ function createApiRouter(effectManager, twitch) {
 
   router.post('/setup/twitch-app', express.json(), (req, res) => { const current = db.getTwitchAuth() || {}; db.saveTwitchAuth({ ...current, client_id: String(req.body.client_id || '').trim(), client_secret: String(req.body.client_secret || '').trim() }); res.json({ success: true }); });
   router.get('/auth/twitch/start', (req, res) => {
-    try {
-      res.json(twitch.getAuthStart(req));
-    } catch (e) {
-      res.status(400).json({ error: e.message });
-    }
+    try { res.json(twitch.getAuthStart(req)); } catch (e) { res.status(400).json({ error: e.message }); }
   });
   router.post('/auth/logout', (_req, res) => { db.clearTwitchAuth(); res.json({ success: true }); });
 
@@ -305,7 +315,8 @@ function createApiRouter(effectManager, twitch) {
       for (const [key, value] of Object.entries(valid)) {
         if (value !== undefined) db.setSetting(key, value);
       }
-      twitch.startRotation(); effectManager.startHealthChecks(); res.json({ success: true });
+      effectManager.startHealthChecks();
+      res.json({ success: true });
     } catch (error) { res.status(400).json({ error: error.message }); }
   });
 
@@ -327,7 +338,7 @@ function createApiRouter(effectManager, twitch) {
         chatRulesReady: db.getAllChatRules().filter((rule) => rule.enabled && rule.targets.length > 0).length
       },
       priority: {
-        summary: runtimeConflicts.length ? 'Chat-Regeln haben Vorrang vor Online-Rotation, wenn beide dieselbe Lampe belegen.' : 'Aktuell keine Regel-Konflikte erkannt.',
+        summary: runtimeConflicts.length ? 'Chat-Regeln haben Vorrang vor Online-Zuständen, wenn beide dieselbe Lampe belegen.' : 'Aktuell keine Regel-Konflikte erkannt.',
         conflicts: runtimeConflicts
       }
     });
@@ -343,7 +354,7 @@ function createApiRouter(effectManager, twitch) {
       const report = analyzeImportPayload(payload);
       if (!report.ok) return res.status(400).json({ error: `Import abgebrochen: ${report.errors.join(' ')}`, report });
       const result = applyImportPayload(payload, mode);
-      twitch.startRotation(); effectManager.startHealthChecks(); await twitch.refreshChannels(); res.json({ success: true, result, report });
+      effectManager.startHealthChecks(); await twitch.refreshChannels(); res.json({ success: true, result, report });
     } catch (error) { res.status(400).json({ error: `Import fehlgeschlagen: ${error.message}` }); }
   });
   router.get('/logs', (req, res) => res.json(db.getRecentLogs(Number(req.query.limit || 100))));
