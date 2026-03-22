@@ -37,16 +37,24 @@ async function init() {
   bindSetup();
   bindForms();
   fillPresetSelects();
-  const [setup, support] = await Promise.all([api('/setup/status'), api('/meta/support')]);
-  state.support = support;
-  byId('redirect-uri').textContent = setup.redirectUri;
-  byId('setup-checklist').innerHTML = (setup.checklist || []).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
-  renderSupportHints();
-  if (setup.needsSetup) showScreen('setup-screen');
-  else {
-    showScreen('app');
-    await refreshAll();
-    startRefreshLoop();
+  try {
+    const [setup, support] = await Promise.all([api('/setup/status'), api('/meta/support')]);
+    state.support = support;
+    byId('redirect-uri').textContent = setup.redirectUri;
+    byId('setup-checklist').innerHTML = (setup.checklist || []).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+    if (setup.savedClientId) byId('setup-client-id').value = setup.savedClientId;
+    if (setup.hasClientConfig) setSetupStatus('Twitch App Daten sind gespeichert. Als Nächstes auf „Mit Twitch verbinden“ klicken.');
+    renderSupportHints();
+    if (setup.needsSetup) showScreen('setup-screen');
+    else {
+      showScreen('app');
+      await refreshAll();
+      startRefreshLoop();
+    }
+  } catch (error) {
+    console.error(error);
+    showScreen('setup-screen');
+    setSetupStatus(`Setup konnte nicht geladen werden: ${error.message || 'unbekannter Fehler'}`, true);
   }
 }
 
@@ -65,22 +73,57 @@ function bindNav() {
 
 function bindSetup() {
   byId('save-app-btn').addEventListener('click', async () => {
-    await api('/setup/twitch-app', { method: 'POST', body: JSON.stringify({ client_id: byId('setup-client-id').value.trim(), client_secret: byId('setup-client-secret').value.trim() }) });
-    toast('Twitch App gespeichert. Als Nächstes auf „Mit Twitch verbinden“ klicken.');
-  });
-  byId('oauth-btn').addEventListener('click', async () => {
-    const data = await api('/auth/twitch/start');
-    window.open(data.url, '_blank', 'width=720,height=820');
-    const poll = setInterval(async () => {
-      const setup = await api('/setup/status');
-      if (!setup.needsSetup) {
-        clearInterval(poll);
-        showScreen('app');
-        await refreshAll();
-        startRefreshLoop();
-        toast('Twitch erfolgreich verbunden.');
+    try {
+      const client_id = byId('setup-client-id').value.trim();
+      const client_secret = byId('setup-client-secret').value.trim();
+      if (!client_id || !client_secret) {
+        setSetupStatus('Bitte Client ID und Client Secret eintragen.', true);
+        return;
       }
-    }, 2000);
+      byId('save-app-btn').disabled = true;
+      await api('/setup/twitch-app', { method: 'POST', body: JSON.stringify({ client_id, client_secret }) });
+      setSetupStatus('Twitch App gespeichert. Jetzt auf „Mit Twitch verbinden“ klicken.');
+      toast('Twitch App gespeichert.');
+    } catch (error) {
+      console.error(error);
+      setSetupStatus(`Speichern fehlgeschlagen: ${error.message || 'unbekannter Fehler'}`, true);
+      toast(error.message || 'Speichern fehlgeschlagen.', true);
+    } finally {
+      byId('save-app-btn').disabled = false;
+    }
+  });
+
+  byId('oauth-btn').addEventListener('click', async () => {
+    try {
+      byId('oauth-btn').disabled = true;
+      setSetupStatus('OAuth-Fenster wird geöffnet …');
+      const data = await api('/auth/twitch/start');
+      const popup = window.open(data.url, '_blank', 'width=720,height=820');
+      if (!popup) {
+        throw new Error('Das OAuth-Fenster wurde blockiert. Bitte Popup-Blocker erlauben und erneut klicken.');
+      }
+      const poll = setInterval(async () => {
+        try {
+          const setup = await api('/setup/status');
+          if (!setup.needsSetup) {
+            clearInterval(poll);
+            showScreen('app');
+            await refreshAll();
+            startRefreshLoop();
+            toast('Twitch erfolgreich verbunden.');
+          }
+        } catch (error) {
+          clearInterval(poll);
+          setSetupStatus(`OAuth-Status konnte nicht geprüft werden: ${error.message || 'unbekannter Fehler'}`, true);
+        }
+      }, 2000);
+    } catch (error) {
+      console.error(error);
+      setSetupStatus(`OAuth konnte nicht gestartet werden: ${error.message || 'unbekannter Fehler'}`, true);
+      toast(error.message || 'OAuth konnte nicht gestartet werden.', true);
+    } finally {
+      byId('oauth-btn').disabled = false;
+    }
   });
 }
 
@@ -593,4 +636,11 @@ function resetLampForm() { byId('lamp-form').reset(); byId('lamp-id').value = ''
 function resetStreamerForm() { byId('streamer-form').reset(); byId('streamer-id').value = ''; byId('streamer-enabled').checked = true; }
 function resetOnlineRuleForm() { byId('online-rule-form').reset(); byId('online-rule-id').value = ''; byId('online-rule-enabled').checked = true; byId('online-rule-preset').value = ''; fillStreamerSelects(); renderTargets('online-rule-targets'); updateTargetSummary('online-rule-targets', 'online-target-summary'); }
 function resetChatRuleForm() { byId('chat-rule-form').reset(); byId('chat-rule-id').value = ''; byId('chat-rule-window').value = 10; byId('chat-rule-min').value = 5; byId('chat-rule-enabled').checked = true; byId('chat-rule-preset').value = ''; fillStreamerSelects(); renderTargets('chat-rule-targets'); updateTargetSummary('chat-rule-targets', 'chat-target-summary'); renderChatRulePreview(); byId('chat-assistant-result').textContent = 'Wähle kurz dein Ziel, dann fülle ich gute Startwerte ein.'; }
+function setSetupStatus(message, isError = false) {
+  const box = byId('setup-status-box');
+  if (!box) return;
+  box.textContent = message;
+  box.className = `preview-box small-box spaced-top ${isError ? 'error-box' : ''}`;
+}
+
 function toast(message, isError = false) { const box = byId('toast'); box.textContent = message; box.className = `toast ${isError ? 'error' : ''}`; box.classList.remove('hidden'); setTimeout(() => box.classList.add('hidden'), 2600); }

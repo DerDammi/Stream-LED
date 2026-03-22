@@ -216,7 +216,14 @@ function createApiRouter(effectManager, twitch) {
 
   router.get('/setup/status', (_req, res) => {
     const auth = db.getTwitchAuth();
-    res.json({ needsSetup: !auth?.access_token, hasClientConfig: !!(auth?.client_id && auth?.client_secret), redirectUri: twitch.getRedirectUri(), login: auth?.login || null, checklist: ['Twitch App mit Redirect URI anlegen', 'Client ID und Client Secret eintragen', 'Per Button mit Twitch verbinden', 'Lampen per Discovery/Assistent importieren', 'Danach Streamer und Regeln anlegen'] });
+    res.json({
+      needsSetup: !auth?.access_token,
+      hasClientConfig: !!(auth?.client_id && auth?.client_secret),
+      redirectUri: twitch.getRedirectUri(),
+      login: auth?.login || null,
+      savedClientId: auth?.client_id || '',
+      checklist: ['Twitch App mit Redirect URI anlegen', 'Client ID und Client Secret eintragen', 'Per Button mit Twitch verbinden', 'Lampen per Discovery/Assistent importieren', 'Danach Streamer und Regeln anlegen']
+    });
   });
 
   router.post('/setup/twitch-app', express.json(), (req, res) => { const current = db.getTwitchAuth() || {}; db.saveTwitchAuth({ ...current, client_id: String(req.body.client_id || '').trim(), client_secret: String(req.body.client_secret || '').trim() }); res.json({ success: true }); });
