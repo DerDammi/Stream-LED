@@ -45,7 +45,10 @@ npm start
 
 Dann öffnen:
 
-<http://localhost:3847>
+- HTTP: <http://localhost:3847>
+- HTTPS (selbstsigniert): <https://localhost:3443>
+
+Für HTTPS liegt ein selbstsigniertes Zertifikat im Ordner `certs/`. Im Browser musst du die Warnung einmal bestätigen.
 
 ## Docker
 

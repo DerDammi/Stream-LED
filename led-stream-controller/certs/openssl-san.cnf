@@ -1,0 +1,22 @@
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+x509_extensions = v3_req
+distinguished_name = dn
+
+[dn]
+C = DE
+ST = Local
+L = Local
+O = Twitch Lamp Controller
+OU = Dev
+CN = 192.168.178.185
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+IP.1 = 192.168.178.185
+IP.2 = 127.0.0.1
+DNS.1 = localhost

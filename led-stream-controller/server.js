@@ -1,12 +1,18 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
+const http = require('http');
+const https = require('https');
 const db = require('./src/database');
 const EffectManager = require('./src/effect-manager');
 const TwitchIntegration = require('./src/twitch');
 const createApiRouter = require('./src/api/routes');
 
 const PORT = db.getSetting('port', 3847);
+const HTTPS_PORT = Number(process.env.HTTPS_PORT || db.getSetting('https_port', 3443));
 const BIND_HOST = process.env.BIND_HOST || '0.0.0.0';
+const HTTPS_KEY_FILE = process.env.HTTPS_KEY_FILE || path.join(__dirname, 'certs', 'selfsigned.key');
+const HTTPS_CERT_FILE = process.env.HTTPS_CERT_FILE || path.join(__dirname, 'certs', 'selfsigned.crt');
 const app = express();
 const effectManager = new EffectManager();
 const twitch = new TwitchIntegration(effectManager);
@@ -54,10 +60,22 @@ async function start() {
   schedule('online-poll', () => db.getSetting('online_poll_seconds', 30), () => twitch.pollOnlineStatus());
   schedule('runtime-tick', () => 2, () => twitch.tick());
 
-  app.listen(PORT, BIND_HOST, () => {
+  http.createServer(app).listen(PORT, BIND_HOST, () => {
     const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || db.getSetting('public_base_url', '') || '').trim().replace(/\/$/, '');
-    db.log('INFO', 'server', `LED Stream Controller läuft auf ${publicBaseUrl || `http://${BIND_HOST}:${PORT}`}`);
+    db.log('INFO', 'server', `HTTP läuft auf ${publicBaseUrl || `http://${BIND_HOST}:${PORT}`}`);
   });
+
+  if (fs.existsSync(HTTPS_KEY_FILE) && fs.existsSync(HTTPS_CERT_FILE)) {
+    const httpsOptions = {
+      key: fs.readFileSync(HTTPS_KEY_FILE),
+      cert: fs.readFileSync(HTTPS_CERT_FILE)
+    };
+    https.createServer(httpsOptions, app).listen(HTTPS_PORT, BIND_HOST, () => {
+      db.log('INFO', 'server', `HTTPS läuft auf https://${BIND_HOST}:${HTTPS_PORT}`);
+    });
+  } else {
+    db.log('WARN', 'server', 'HTTPS Zertifikat/Key nicht gefunden – HTTPS wurde nicht gestartet.');
+  }
 }
 
 start().catch((err) => {
