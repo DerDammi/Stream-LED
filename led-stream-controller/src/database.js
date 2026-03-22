@@ -130,9 +130,10 @@ function getTwitchAuth() {
 
 function saveTwitchAuth(data) {
   getDb().prepare(`
-    INSERT INTO twitch_auth (id, client_id, client_secret, access_token, refresh_token, login, user_id, expires_at, updated_at)
-    VALUES (1, @client_id, @client_secret, @access_token, @refresh_token, @login, @user_id, @expires_at, datetime('now'))
+    INSERT INTO twitch_auth (id, auth_type, client_id, client_secret, access_token, refresh_token, login, user_id, expires_at, updated_at)
+    VALUES (1, @auth_type, @client_id, @client_secret, @access_token, @refresh_token, @login, @user_id, @expires_at, datetime('now'))
     ON CONFLICT(id) DO UPDATE SET
+      auth_type = excluded.auth_type,
       client_id = excluded.client_id,
       client_secret = excluded.client_secret,
       access_token = excluded.access_token,
@@ -142,6 +143,7 @@ function saveTwitchAuth(data) {
       expires_at = excluded.expires_at,
       updated_at = datetime('now')
   `).run({
+    auth_type: data.auth_type || 'oauth',
     client_id: data.client_id || null,
     client_secret: data.client_secret || null,
     access_token: data.access_token || null,
