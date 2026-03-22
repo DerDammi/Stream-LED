@@ -56,10 +56,27 @@ Im Setup-Screen trägst du ein:
 - Client ID
 - Client Secret
 
-Im Twitch Developer Portal muss als Redirect URI die URL gesetzt sein, unter der dein Interface erreichbar ist. Lokal ist das standardmäßig:
+Im Twitch Developer Portal muss als Redirect URI die URL gesetzt sein, unter der dein Interface erreichbar ist.
+
+Standard lokal:
 
 ```text
 http://localhost:3847/oauth/callback
+```
+
+Wenn du die App von außen erreichbar machen willst, setze eine öffentliche Basis-URL. Beispiel:
+
+```text
+https://deine-domain.de/oauth/callback
+```
+
+Dafür gibt es zwei Wege:
+
+1. dauerhaft in der App über die Einstellung `public_base_url`
+2. per Umgebungsvariable beim Start:
+
+```bash
+PUBLIC_BASE_URL=https://deine-domain.de BIND_HOST=0.0.0.0 npm start
 ```
 
 Danach im Webinterface einfach auf **Mit Twitch verbinden** klicken.

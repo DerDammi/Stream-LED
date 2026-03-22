@@ -87,11 +87,13 @@ function validateSettingsPayload(payload = {}) {
   const next = {
     online_poll_seconds: Number(payload.online_poll_seconds),
     rotation_seconds: Number(payload.rotation_seconds),
-    healthcheck_seconds: Number(payload.healthcheck_seconds)
+    healthcheck_seconds: Number(payload.healthcheck_seconds),
+    public_base_url: payload.public_base_url == null ? undefined : String(payload.public_base_url || '').trim().replace(/\/$/, '')
   };
   if (!Number.isFinite(next.online_poll_seconds) || next.online_poll_seconds < 10 || next.online_poll_seconds > 600) throw new Error('Online Polling muss zwischen 10 und 600 Sekunden liegen.');
   if (!Number.isFinite(next.rotation_seconds) || next.rotation_seconds < 5 || next.rotation_seconds > 600) throw new Error('Rotation muss zwischen 5 und 600 Sekunden liegen.');
   if (!Number.isFinite(next.healthcheck_seconds) || next.healthcheck_seconds < 10 || next.healthcheck_seconds > 600) throw new Error('Healthcheck muss zwischen 10 und 600 Sekunden liegen.');
+  if (next.public_base_url !== undefined && next.public_base_url !== '' && !/^https?:\/\//i.test(next.public_base_url)) throw new Error('Öffentliche Basis-URL muss mit http:// oder https:// beginnen.');
   return next;
 }
 
@@ -281,11 +283,13 @@ function createApiRouter(effectManager, twitch) {
     try { const result = await createRuleTestReport({ twitch, effectManager, onlineRuleId: req.body.online_rule_id, chatRuleId: req.body.chat_rule_id, message: req.body.message, streamer_login: req.body.streamer_login }); res.json({ success: true, result }); } catch (error) { res.status(400).json({ error: error.message }); }
   });
 
-  router.get('/settings', (_req, res) => res.json({ port: db.getSetting('port', 3847), online_poll_seconds: db.getSetting('online_poll_seconds', 30), rotation_seconds: db.getSetting('rotation_seconds', 20), healthcheck_seconds: db.getSetting('healthcheck_seconds', 30), redirect_uri: twitch.getRedirectUri() }));
+  router.get('/settings', (_req, res) => res.json({ port: db.getSetting('port', 3847), online_poll_seconds: db.getSetting('online_poll_seconds', 30), rotation_seconds: db.getSetting('rotation_seconds', 20), healthcheck_seconds: db.getSetting('healthcheck_seconds', 30), public_base_url: db.getSetting('public_base_url', ''), redirect_uri: twitch.getRedirectUri() }));
   router.put('/settings', express.json(), (req, res) => {
     try {
       const valid = validateSettingsPayload(req.body);
-      for (const [key, value] of Object.entries(valid)) db.setSetting(key, value);
+      for (const [key, value] of Object.entries(valid)) {
+        if (value !== undefined) db.setSetting(key, value);
+      }
       twitch.startRotation(); effectManager.startHealthChecks(); res.json({ success: true });
     } catch (error) { res.status(400).json({ error: error.message }); }
   });

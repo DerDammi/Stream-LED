@@ -6,6 +6,7 @@ const TwitchIntegration = require('./src/twitch');
 const createApiRouter = require('./src/api/routes');
 
 const PORT = db.getSetting('port', 3847);
+const BIND_HOST = process.env.BIND_HOST || '0.0.0.0';
 const app = express();
 const effectManager = new EffectManager();
 const twitch = new TwitchIntegration(effectManager);
@@ -52,8 +53,9 @@ async function start() {
   schedule('online-poll', () => db.getSetting('online_poll_seconds', 30), () => twitch.pollOnlineStatus());
   schedule('runtime-tick', () => 2, () => twitch.tick());
 
-  app.listen(PORT, () => {
-    db.log('INFO', 'server', `LED Stream Controller läuft auf http://localhost:${PORT}`);
+  app.listen(PORT, BIND_HOST, () => {
+    const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || db.getSetting('public_base_url', '') || '').trim().replace(/\/$/, '');
+    db.log('INFO', 'server', `LED Stream Controller läuft auf ${publicBaseUrl || `http://${BIND_HOST}:${PORT}`}`);
   });
 }
 

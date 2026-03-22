@@ -59,8 +59,14 @@ class TwitchIntegration {
     return true;
   }
 
+  getBaseUrl() {
+    const configured = String(process.env.PUBLIC_BASE_URL || db.getSetting('public_base_url', '') || '').trim().replace(/\/$/, '');
+    if (configured) return configured;
+    return `http://localhost:${db.getSetting('port', 3847)}`;
+  }
+
   getRedirectUri() {
-    return `http://localhost:${db.getSetting('port', 3847)}/oauth/callback`;
+    return `${this.getBaseUrl()}/oauth/callback`;
   }
 
   getAuthUrl() {
