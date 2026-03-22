@@ -99,6 +99,7 @@ function initSchema() {
   `);
 
   ensureColumn('twitch_auth', 'client_secret', 'client_secret TEXT');
+  ensureColumn('twitch_auth', 'auth_type', "auth_type TEXT DEFAULT 'oauth'");
   ensureColumn('lamps', 'metadata_json', "metadata_json TEXT DEFAULT '{}'");
 
   setDefaultSetting('port', 3847);

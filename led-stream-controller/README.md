@@ -1,6 +1,14 @@
-# Twitch Lamp Controller V1.4.0
+# Twitch Lamp Controller V1.4.2
 
 Lokales Webinterface für WLED- und Govee-Lampen mit Twitch-Anbindung.
+
+## Was in V1.4.2 besser ist
+
+- **Twitch OAuth Redirects sind jetzt schlauer**: lokal bevorzugt die App automatisch `localhost`, extern sauber eine konfigurierte `https://`-Adresse
+- deutlich klarere **Setup-Hinweise**, welche Redirect URIs Twitch akzeptiert — und welche typischen LAN-HTTP-URLs man lieber nicht einträgt
+- neue **öffentliche Basis-URL** direkt in den Einstellungen, damit Docker/Reverse-Proxy/VPS einfacher werden
+- OAuth speichert die beim Start verwendete Redirect URI jetzt sauber mit, damit der Callback robuster ist
+- freundlichere Fehlertexte bei Redirect-/Callback-Problemen
 
 ## Was in V1.4.0 besser ist
 
@@ -56,19 +64,23 @@ Im Setup-Screen trägst du ein:
 - Client ID
 - Client Secret
 
-Im Twitch Developer Portal muss als Redirect URI die URL gesetzt sein, unter der dein Interface erreichbar ist.
+Im Twitch Developer Portal muss als Redirect URI **exakt** die URL gesetzt sein, die beim OAuth-Start verwendet wird.
 
-Standard lokal:
+**Gut für lokale Entwicklung / Tests:**
 
 ```text
 http://localhost:3847/oauth/callback
 ```
+
+**Gut für extern / deployed:**
 
 Wenn du die App von außen erreichbar machen willst, setze eine öffentliche Basis-URL. Beispiel:
 
 ```text
 https://deine-domain.de/oauth/callback
 ```
+
+Wichtig: Ein normales `http://192.168.x.x/...` oder `http://mein-rechner.local/...` ist für Twitch meist **nicht** passend. Nutze lokal lieber `localhost`, extern lieber `https://`.
 
 Dafür gibt es zwei Wege:
 

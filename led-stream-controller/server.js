@@ -17,16 +17,17 @@ app.use(express.static(path.join(__dirname, 'src', 'web')));
 app.use('/api', createApiRouter(effectManager, twitch));
 
 app.get('/oauth/callback', async (req, res) => {
-  const { code, state, error } = req.query;
-  if (error) return res.status(400).send(`<h2>Twitch OAuth Fehler: ${error}</h2>`);
-  if (!code || !state || !twitch.consumeState(String(state))) {
-    return res.status(400).send('<h2>Ungültiger OAuth Callback</h2>');
+  const { code, state, error, error_description } = req.query;
+  if (error) return res.status(400).send(`<!doctype html><html><body style="font-family:sans-serif;background:#111827;color:#fff;padding:32px"><h2>❌ Twitch OAuth Fehler</h2><p>${error_description || error}</p><p>Prüfe vor allem, ob die Redirect URI in Twitch exakt mit der hier verwendeten URL übereinstimmt.</p></body></html>`);
+  const stateEntry = state ? twitch.consumeState(String(state)) : null;
+  if (!code || !stateEntry) {
+    return res.status(400).send('<!doctype html><html><body style="font-family:sans-serif;background:#111827;color:#fff;padding:32px"><h2>Ungültiger OAuth Callback</h2><p>Der Login-Start ist abgelaufen oder wurde nicht von diesem Browser-Fenster begonnen. Starte die Verbindung bitte noch einmal direkt aus dem Webinterface.</p></body></html>');
   }
   try {
-    await twitch.exchangeCode(String(code));
+    await twitch.exchangeCode(String(code), stateEntry.redirectUri);
     res.send(`<!doctype html><html><body style="font-family:sans-serif;background:#111827;color:#fff;padding:32px"><h2>✅ Twitch erfolgreich verbunden</h2><p>Du kannst dieses Fenster jetzt schließen und zum Webinterface zurückgehen.</p><script>setTimeout(()=>{window.close()},1200)</script></body></html>`);
   } catch (e) {
-    res.status(500).send(`<h2>OAuth fehlgeschlagen</h2><pre>${e.message}</pre>`);
+    res.status(500).send(`<!doctype html><html><body style="font-family:sans-serif;background:#111827;color:#fff;padding:32px"><h2>OAuth fehlgeschlagen</h2><pre>${e.message}</pre><p>Wenn Twitch über Redirect URIs meckert, nutze lokal <strong>http://localhost:${PORT}/oauth/callback</strong> oder extern eine <strong>https://</strong>-URL. Ein normales <strong>http://192.168.x.x</strong> akzeptiert Twitch meistens nicht.</p></body></html>`);
   }
 });
 

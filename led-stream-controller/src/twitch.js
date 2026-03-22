@@ -59,38 +59,121 @@ class TwitchIntegration {
     return true;
   }
 
-  getBaseUrl() {
-    const configured = String(process.env.PUBLIC_BASE_URL || db.getSetting('public_base_url', '') || '').trim().replace(/\/$/, '');
-    if (configured) return configured;
+  getConfiguredBaseUrl() {
+    return String(process.env.PUBLIC_BASE_URL || db.getSetting('public_base_url', '') || '').trim().replace(/\/$/, '');
+  }
+
+  isLocalhostHostname(hostname = '') {
+    const value = String(hostname || '').trim().toLowerCase();
+    return value === 'localhost' || value === '127.0.0.1' || value === '::1' || value === '[::1]';
+  }
+
+  isPrivateHostname(hostname = '') {
+    const value = String(hostname || '').trim().toLowerCase();
+    if (!value) return false;
+    if (this.isLocalhostHostname(value)) return false;
+    if (value.endsWith('.local')) return true;
+    if (/^10\./.test(value)) return true;
+    if (/^192\.168\./.test(value)) return true;
+    if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(value)) return true;
+    if (/^169\.254\./.test(value)) return true;
+    return false;
+  }
+
+  isTwitchSafeBaseUrl(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return false;
+    try {
+      const parsed = new URL(raw);
+      const hostname = parsed.hostname.replace(/^\[(.*)\]$/, '$1');
+      if (parsed.protocol === 'https:') return true;
+      return parsed.protocol === 'http:' && this.isLocalhostHostname(hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  getBaseUrl(requestLike = null) {
+    const configured = this.getConfiguredBaseUrl();
+    if (this.isTwitchSafeBaseUrl(configured)) return configured;
+
+    const forwardedProto = requestLike?.headers?.['x-forwarded-proto'];
+    const proto = String(Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto || requestLike?.protocol || 'http').split(',')[0].trim() || 'http';
+    const rawHost = String(requestLike?.headers?.host || '').trim();
+
+    if (rawHost) {
+      const host = rawHost.replace(/\/$/, '');
+      const hostname = host.replace(/:\d+$/, '').replace(/^\[(.*)\]$/, '$1');
+      if (proto === 'https') {
+        return `${proto}://${host}`;
+      }
+      if (this.isLocalhostHostname(hostname)) {
+        return `http://localhost:${db.getSetting('port', 3847)}`;
+      }
+    }
+
     return `http://localhost:${db.getSetting('port', 3847)}`;
   }
 
-  getRedirectUri() {
-    return `${this.getBaseUrl()}/oauth/callback`;
+  getRedirectUri(requestLike = null) {
+    return `${this.getBaseUrl(requestLike)}/oauth/callback`;
   }
 
-  getAuthUrl() {
+  getRedirectOptions(requestLike = null) {
+    const configured = this.getConfiguredBaseUrl();
+    const fallback = `http://localhost:${db.getSetting('port', 3847)}`;
+    const currentBase = this.getBaseUrl(requestLike);
+    const configuredIsSafeForOauth = this.isTwitchSafeBaseUrl(configured);
+    const host = String(requestLike?.headers?.host || '').trim();
+    const hostname = host.replace(/:\d+$/, '').replace(/^\[(.*)\]$/, '$1');
+    const currentIsSafeForOauth = !host || String(currentBase).startsWith('https://') || this.isLocalhostHostname(hostname);
+    return {
+      configuredBaseUrl: configured || '',
+      configuredIsSafeForOauth,
+      currentBaseUrl: currentBase,
+      fallbackBaseUrl: fallback,
+      redirectUri: `${currentBase}/oauth/callback`,
+      currentIsSafeForOauth,
+      guidance: {
+        goodExamples: [
+          `http://localhost:${db.getSetting('port', 3847)}/oauth/callback`,
+          'https://example.com/oauth/callback'
+        ],
+        avoid: [
+          'http://192.168.x.x/oauth/callback',
+          'http://mein-pc.local/oauth/callback'
+        ]
+      }
+    };
+  }
+
+  getAuthStart(requestLike = null) {
     const auth = db.getTwitchAuth();
     if (!auth?.client_id) throw new Error('Client ID fehlt');
+    const redirectUri = this.getRedirectUri(requestLike);
     const state = crypto.randomBytes(16).toString('hex');
-    this.oauthStates.set(state, Date.now());
+    this.oauthStates.set(state, { createdAt: Date.now(), redirectUri });
     const params = new URLSearchParams({
       client_id: auth.client_id,
-      redirect_uri: this.getRedirectUri(),
+      redirect_uri: redirectUri,
       response_type: 'code',
       scope: 'chat:read user:read:email',
       state
     });
-    return `https://id.twitch.tv/oauth2/authorize?${params.toString()}`;
+    return {
+      url: `https://id.twitch.tv/oauth2/authorize?${params.toString()}`,
+      redirectUri,
+      redirectOptions: this.getRedirectOptions(requestLike)
+    };
   }
 
   consumeState(state) {
-    const ok = this.oauthStates.has(state);
+    const entry = this.oauthStates.get(state) || null;
     this.oauthStates.delete(state);
-    return ok;
+    return entry;
   }
 
-  async exchangeCode(code) {
+  async exchangeCode(code, redirectUri = null) {
     const auth = db.getTwitchAuth();
     const { default: fetch } = await import('node-fetch');
     const resp = await fetch('https://id.twitch.tv/oauth2/token', {
@@ -101,7 +184,7 @@ class TwitchIntegration {
         client_secret: auth.client_secret,
         code,
         grant_type: 'authorization_code',
-        redirect_uri: this.getRedirectUri()
+        redirect_uri: redirectUri || this.getRedirectUri()
       })
     });
     if (!resp.ok) throw new Error(`OAuth fehlgeschlagen (${resp.status})`);

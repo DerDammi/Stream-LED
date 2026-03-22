@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Twitch Lamp Controller V1.4.1</title>
+  <title>Twitch Lamp Controller V1.4.2</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
 
   <div id="setup-screen" class="screen hidden">
     <div class="setup-card">
-      <div class="badge">V1.4.1 · Docker-first</div>
+      <div class="badge">V1.4.2 · Docker-first</div>
       <h1>Twitch Lamp Controller</h1>
       <p class="subtitle">Noob-freundliches Setup für WLED, Govee, Philips Hue, Online-Szenen und chatgesteuerte Lampenregeln.</p>
       <div id="lamp-type-overview" class="support-row"></div>
@@ -19,7 +19,7 @@
       <div class="wizard-box">
         <h3>So startest du</h3>
         <ol id="setup-checklist" class="setup-list"></ol>
-        <p class="help">Tipp: Wenn du Docker nutzt, nimm als Redirect URI die Adresse, unter der du das Webinterface später wirklich öffnest.</p>
+        <p class="help">Tipp: Twitch akzeptiert lokal zuverlässig <code>http://localhost:PORT</code> und für externe Nutzung eine <code>https://</code>-URL. Ein normales <code>http://192.168.x.x</code> ist dafür meistens die falsche Idee.</p>
       </div>
 
       <div class="wizard-box">
@@ -28,6 +28,7 @@
         <label>Client Secret<input id="setup-client-secret" type="password" placeholder="aus dev.twitch.tv"></label>
         <p class="help">Redirect URI für Twitch:</p>
         <code id="redirect-uri" class="full-code">-</code>
+        <div id="oauth-guidance-box" class="preview-box small-box"></div>
         <button class="btn btn-primary btn-full" id="save-app-btn">Twitch App speichern</button>
       </div>
 
@@ -44,7 +45,7 @@
     <aside class="sidebar">
       <div>
         <div class="logo">💡 Twitch Lamp</div>
-        <div class="badge small">V1.4.1</div>
+        <div class="badge small">V1.4.2</div>
       </div>
       <nav>
         <a href="#" class="nav-link active" data-tab="dashboard">Dashboard</a>
@@ -120,7 +121,14 @@
           <label>Online Polling (Sek.)<input id="setting-online-poll" type="number" min="10"></label>
           <label>Rotation (Sek.)<input id="setting-rotation" type="number" min="5"></label>
           <label>Healthcheck (Sek.)<input id="setting-health" type="number" min="10"></label>
+          <label>Öffentliche Basis-URL (optional)<input id="setting-public-base-url" placeholder="z. B. https://example.com"></label>
           <div class="actions-row align-end"><button class="btn btn-primary" id="save-settings-btn">Speichern</button></div>
+        </div>
+        <div class="panel">
+          <h3>Twitch Redirect URI</h3>
+          <p class="help">Lokal nimm <code>http://localhost:3847/oauth/callback</code>. Für Docker/Reverse-Proxy/VPS trage hier deine echte externe <code>https://</code>-Adresse ein.</p>
+          <code id="settings-redirect-uri" class="full-code">-</code>
+          <div id="settings-oauth-guidance" class="preview-box small-box"></div>
         </div>
         <div class="panel-grid two">
           <div class="panel">

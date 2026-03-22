@@ -42,6 +42,7 @@ async function init() {
     state.support = support;
     byId('redirect-uri').textContent = setup.redirectUri;
     byId('setup-checklist').innerHTML = (setup.checklist || []).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+    renderOAuthGuidance(setup.redirectOptions);
     if (setup.savedClientId) byId('setup-client-id').value = setup.savedClientId;
     if (setup.hasClientConfig) setSetupStatus('Twitch App Daten sind gespeichert. Als Nächstes auf „Mit Twitch verbinden“ klicken.');
     renderSupportHints();
@@ -82,6 +83,9 @@ function bindSetup() {
       }
       byId('save-app-btn').disabled = true;
       await api('/setup/twitch-app', { method: 'POST', body: JSON.stringify({ client_id, client_secret }) });
+      const setup = await api('/setup/status');
+      byId('redirect-uri').textContent = setup.redirectUri;
+      renderOAuthGuidance(setup.redirectOptions);
       setSetupStatus('Twitch App gespeichert. Jetzt auf „Mit Twitch verbinden“ klicken.');
       toast('Twitch App gespeichert.');
     } catch (error) {
@@ -98,6 +102,8 @@ function bindSetup() {
       byId('oauth-btn').disabled = true;
       setSetupStatus('OAuth-Fenster wird geöffnet …');
       const data = await api('/auth/twitch/start');
+      renderOAuthGuidance(data.redirectOptions);
+      byId('redirect-uri').textContent = data.redirectUri;
       const popup = window.open(data.url, '_blank', 'width=720,height=820');
       if (!popup) {
         throw new Error('Das OAuth-Fenster wurde blockiert. Bitte Popup-Blocker erlauben und erneut klicken.');
@@ -134,7 +140,7 @@ function bindForms() {
   byId('chat-rule-form').addEventListener('submit', saveChatRule);
   byId('save-settings-btn').addEventListener('click', saveSettings);
   byId('clear-logs-btn').addEventListener('click', async () => { await api('/logs', { method: 'DELETE' }); toast('Logs geleert.'); await refreshAll(); });
-  byId('reconnect-btn').addEventListener('click', async () => { const data = await api('/auth/twitch/start'); window.open(data.url, '_blank', 'width=720,height=820'); });
+  byId('reconnect-btn').addEventListener('click', async () => { const data = await api('/auth/twitch/start'); renderOAuthGuidance(data.redirectOptions, 'settings-oauth-guidance'); byId('settings-redirect-uri').textContent = data.redirectUri; window.open(data.url, '_blank', 'width=720,height=820'); });
   byId('refresh-now-btn').addEventListener('click', refreshAll);
   byId('run-healthcheck-btn')?.addEventListener('click', runHealthcheckNow);
   byId('discover-lamps-btn')?.addEventListener('click', discoverLampsNow);
@@ -377,6 +383,9 @@ function renderSettings() {
   byId('setting-online-poll').value = state.settings.online_poll_seconds;
   byId('setting-rotation').value = state.settings.rotation_seconds;
   byId('setting-health').value = state.settings.healthcheck_seconds;
+  if (byId('setting-public-base-url')) byId('setting-public-base-url').value = state.settings.public_base_url || '';
+  if (byId('settings-redirect-uri')) byId('settings-redirect-uri').textContent = state.settings.redirect_uri || '-';
+  renderOAuthGuidance(state.settings.redirect_options, 'settings-oauth-guidance');
   const discoveryBox = byId('discovery-results');
   if (discoveryBox) {
     const devices = state.discoveries?.result?.devices || {};
@@ -606,7 +615,7 @@ async function saveLamp(e) {
 async function saveStreamer(e) { e.preventDefault(); const id = byId('streamer-id').value; const payload = { login: byId('streamer-login').value.trim().toLowerCase(), enabled: byId('streamer-enabled').checked }; await api(id ? `/streamers/${id}` : '/streamers', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) }); closeModal('streamer-modal'); resetStreamerForm(); toast('Streamer gespeichert.'); await refreshAll(); }
 async function saveOnlineRule(e) { e.preventDefault(); const id = byId('online-rule-id').value; const payload = { streamer_id: byId('online-rule-streamer').value, enabled: byId('online-rule-enabled').checked, targets: collectTargets('online-rule-targets') }; await api(id ? `/online-rules/${id}` : '/online-rules', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) }); closeModal('online-rule-modal'); resetOnlineRuleForm(); toast('Online-Szene gespeichert.'); await refreshAll(); }
 async function saveChatRule(e) { e.preventDefault(); const id = byId('chat-rule-id').value; const payload = { name: byId('chat-rule-name').value.trim(), streamer_id: byId('chat-rule-streamer').value, match_text: byId('chat-rule-text').value.trim(), match_type: byId('chat-rule-match-type').value, window_seconds: Number(byId('chat-rule-window').value), min_matches: Number(byId('chat-rule-min').value), enabled: byId('chat-rule-enabled').checked, targets: collectTargets('chat-rule-targets') }; await api(id ? `/chat-rules/${id}` : '/chat-rules', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) }); closeModal('chat-rule-modal'); resetChatRuleForm(); toast('Chat-Regel gespeichert.'); await refreshAll(); }
-async function saveSettings() { await api('/settings', { method: 'PUT', body: JSON.stringify({ online_poll_seconds: Number(byId('setting-online-poll').value), rotation_seconds: Number(byId('setting-rotation').value), healthcheck_seconds: Number(byId('setting-health').value) }) }); toast('Einstellungen gespeichert.'); await refreshAll(); }
+async function saveSettings() { await api('/settings', { method: 'PUT', body: JSON.stringify({ online_poll_seconds: Number(byId('setting-online-poll').value), rotation_seconds: Number(byId('setting-rotation').value), healthcheck_seconds: Number(byId('setting-health').value), public_base_url: byId('setting-public-base-url').value.trim() }) }); toast('Einstellungen gespeichert.'); await refreshAll(); }
 
 async function exportConfig() {
   const payload = await api('/config/export');
@@ -636,6 +645,30 @@ function resetLampForm() { byId('lamp-form').reset(); byId('lamp-id').value = ''
 function resetStreamerForm() { byId('streamer-form').reset(); byId('streamer-id').value = ''; byId('streamer-enabled').checked = true; }
 function resetOnlineRuleForm() { byId('online-rule-form').reset(); byId('online-rule-id').value = ''; byId('online-rule-enabled').checked = true; byId('online-rule-preset').value = ''; fillStreamerSelects(); renderTargets('online-rule-targets'); updateTargetSummary('online-rule-targets', 'online-target-summary'); }
 function resetChatRuleForm() { byId('chat-rule-form').reset(); byId('chat-rule-id').value = ''; byId('chat-rule-window').value = 10; byId('chat-rule-min').value = 5; byId('chat-rule-enabled').checked = true; byId('chat-rule-preset').value = ''; fillStreamerSelects(); renderTargets('chat-rule-targets'); updateTargetSummary('chat-rule-targets', 'chat-target-summary'); renderChatRulePreview(); byId('chat-assistant-result').textContent = 'Wähle kurz dein Ziel, dann fülle ich gute Startwerte ein.'; }
+
+function renderOAuthGuidance(options, boxId = 'oauth-guidance-box') {
+  const box = byId(boxId);
+  if (!box) return;
+  if (!options) { box.innerHTML = 'Noch keine Redirect-Info geladen.'; return; }
+  const current = escapeHtml(options.redirectUri || '-');
+  const configured = options.configuredBaseUrl ? `<div class="status-row"><span>•</span><span>Gespeicherte externe Basis-URL: <code>${escapeHtml(options.configuredBaseUrl)}</code></span></div>` : '';
+  const configuredWarning = options.configuredBaseUrl && options.configuredIsSafeForOauth === false
+    ? '<div class="status-row"><span>⚠️</span><span>Die gespeicherte Basis-URL ist für Twitch eher ungeeignet. Für extern lieber <code>https://...</code>, lokal lieber <code>http://localhost:...</code>.</span></div>'
+    : '';
+  const safety = options.currentIsSafeForOauth
+    ? '<div class="status-row"><span>✅</span><span>Diese URL ist für Twitch plausibel.</span></div>'
+    : '<div class="status-row"><span>⚠️</span><span>Die aktuelle Browser-URL wirkt nicht Twitch-tauglich. Lokal nutze <code>localhost</code>, extern eine <code>https://</code>-Domain.</span></div>';
+  box.innerHTML = `
+    <strong>Redirect URI Hilfe</strong>
+    <div class="status-row"><span>→</span><span>Aktuell verwendet die App: <code>${current}</code></span></div>
+    ${configured}
+    ${configuredWarning}
+    ${safety}
+    <div class="status-row"><span>👍</span><span>Gut: ${(options.guidance?.goodExamples || []).map((entry) => `<code>${escapeHtml(entry)}</code>`).join(' oder ')}</span></div>
+    <div class="status-row"><span>⛔</span><span>Nicht empfehlen: ${(options.guidance?.avoid || []).map((entry) => `<code>${escapeHtml(entry)}</code>`).join(' oder ')}</span></div>
+  `;
+}
+
 function setSetupStatus(message, isError = false) {
   const box = byId('setup-status-box');
   if (!box) return;

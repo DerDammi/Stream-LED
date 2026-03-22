@@ -214,20 +214,28 @@ function createApiRouter(effectManager, twitch) {
     { id: 'hue', name: 'Philips Hue', status: 'supported-local', helper: 'V1.4 kann jetzt Hue Bridges lokal koppeln, Lichter importieren und Farbe/Ein-Aus direkt steuern.' }
   ] }));
 
-  router.get('/setup/status', (_req, res) => {
+  router.get('/setup/status', (req, res) => {
     const auth = db.getTwitchAuth();
+    const redirect = twitch.getRedirectOptions(req);
     res.json({
       needsSetup: !auth?.access_token,
       hasClientConfig: !!(auth?.client_id && auth?.client_secret),
-      redirectUri: twitch.getRedirectUri(),
+      redirectUri: redirect.redirectUri,
+      redirectOptions: redirect,
       login: auth?.login || null,
       savedClientId: auth?.client_id || '',
-      checklist: ['Twitch App mit Redirect URI anlegen', 'Client ID und Client Secret eintragen', 'Per Button mit Twitch verbinden', 'Lampen per Discovery/Assistent importieren', 'Danach Streamer und Regeln anlegen']
+      checklist: ['In Twitch eine App anlegen', 'Als Redirect URI entweder localhost oder deine HTTPS-Domain eintragen', 'Client ID und Client Secret hier speichern', 'Per Button mit Twitch verbinden', 'Danach Lampen, Streamer und Regeln anlegen']
     });
   });
 
   router.post('/setup/twitch-app', express.json(), (req, res) => { const current = db.getTwitchAuth() || {}; db.saveTwitchAuth({ ...current, client_id: String(req.body.client_id || '').trim(), client_secret: String(req.body.client_secret || '').trim() }); res.json({ success: true }); });
-  router.get('/auth/twitch/start', (_req, res) => { try { res.json({ url: twitch.getAuthUrl(), redirectUri: twitch.getRedirectUri() }); } catch (e) { res.status(400).json({ error: e.message }); } });
+  router.get('/auth/twitch/start', (req, res) => {
+    try {
+      res.json(twitch.getAuthStart(req));
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
   router.post('/auth/logout', (_req, res) => { db.clearTwitchAuth(); res.json({ success: true }); });
 
   router.get('/discover/lamps', async (req, res) => {
@@ -290,7 +298,7 @@ function createApiRouter(effectManager, twitch) {
     try { const result = await createRuleTestReport({ twitch, effectManager, onlineRuleId: req.body.online_rule_id, chatRuleId: req.body.chat_rule_id, message: req.body.message, streamer_login: req.body.streamer_login }); res.json({ success: true, result }); } catch (error) { res.status(400).json({ error: error.message }); }
   });
 
-  router.get('/settings', (_req, res) => res.json({ port: db.getSetting('port', 3847), online_poll_seconds: db.getSetting('online_poll_seconds', 30), rotation_seconds: db.getSetting('rotation_seconds', 20), healthcheck_seconds: db.getSetting('healthcheck_seconds', 30), public_base_url: db.getSetting('public_base_url', ''), redirect_uri: twitch.getRedirectUri() }));
+  router.get('/settings', (req, res) => res.json({ port: db.getSetting('port', 3847), online_poll_seconds: db.getSetting('online_poll_seconds', 30), rotation_seconds: db.getSetting('rotation_seconds', 20), healthcheck_seconds: db.getSetting('healthcheck_seconds', 30), public_base_url: db.getSetting('public_base_url', ''), redirect_uri: twitch.getRedirectUri(req), redirect_options: twitch.getRedirectOptions(req) }));
   router.put('/settings', express.json(), (req, res) => {
     try {
       const valid = validateSettingsPayload(req.body);
