@@ -50,8 +50,7 @@
       <nav>
         <a href="#" class="nav-link active" data-tab="dashboard">Dashboard</a>
         <a href="#" class="nav-link" data-tab="lamps">Lampen</a>
-        <a href="#" class="nav-link" data-tab="streamers">Streamer</a>
-        <a href="#" class="nav-link" data-tab="online-rules">Online-Szenen</a>
+        <a href="#" class="nav-link" data-tab="streamers">Streamer & Live-Regeln</a>
         <a href="#" class="nav-link" data-tab="chat-rules">Chat-Regeln</a>
         <a href="#" class="nav-link" data-tab="settings">Einstellungen</a>
         <a href="#" class="nav-link" data-tab="logs">Logs</a>
@@ -90,20 +89,17 @@
 
       <section id="tab-lamps" class="tab">
         <div class="section-head"><h2>Lampen</h2><button class="btn btn-primary" onclick="openLampModal()">Lampe hinzufügen</button></div>
-        <p class="help">Lege WLED-, Govee- oder Hue-Lampen an. V1.4 bringt echte lokale Hue-Kopplung, bessere Discovery und mehr Test-/Prioritätssicht.</p>
+        <p class="help">Hier geht es nur um Geräteverwaltung: Lampe anlegen, Verbindung prüfen, Effekte laden, Diagnose ausführen und technische Daten pflegen. Live-Farben und Effekte stellst du bei den Streamern ein.</p>
         <div id="lamp-list" class="card-list"></div>
       </section>
 
       <section id="tab-streamers" class="tab">
-        <div class="section-head"><h2>Streamer</h2><button class="btn btn-primary" onclick="openStreamerModal()">Streamer hinzufügen</button></div>
-        <p class="help">Du kannst mehrere Streamer gleichzeitig beobachten. Online-Szenen werden jetzt pro Lampe aufgelöst: jede Lampe rotiert unabhängig zwischen ihren gerade live zugewiesenen Streamern.</p>
+        <div class="section-head"><h2>Streamer & Live-Regeln</h2><div class="actions-row"><button class="btn btn-secondary" onclick="openOnlineRuleModal()">Live-Regel ohne Streamerkarte öffnen</button><button class="btn btn-primary" onclick="openStreamerModal()">Streamer hinzufügen</button></div></div>
+        <div class="panel note-panel">
+          <strong>So ist der Flow gedacht:</strong>
+          <span>1. Streamer anlegen. 2. Direkt an diesem Streamer die Live-Regel öffnen. 3. Lampen zuweisen. 4. Pro Lampe Farbe oder Effekt plus eigenes Rotationsintervall festlegen. Wenn parallel eine Chat-Regel für dieselbe Lampe aktiv ist, bleibt die Chat-Regel wie bisher stärker.</span>
+        </div>
         <div id="streamer-list" class="card-list"></div>
-      </section>
-
-      <section id="tab-online-rules" class="tab">
-        <div class="section-head"><h2>Online-Szenen</h2><button class="btn btn-primary" onclick="openOnlineRuleModal()">Online-Szene hinzufügen</button></div>
-        <p class="help">Diese Szene wird aktiv, wenn der Streamer live ist. Pro Lampen-Ziel kannst du jetzt auch ein eigenes Rotationsintervall setzen. Falls dieselbe Lampe auch in einer aktiven Chat-Regel steckt, gewinnt immer die Chat-Regel.</p>
-        <div id="online-rule-list" class="card-list"></div>
       </section>
 
       <section id="tab-chat-rules" class="tab">
@@ -216,7 +212,7 @@
 
   <div id="online-rule-modal" class="modal hidden">
     <div class="modal-content modal-wide">
-      <div class="modal-head"><h3>Online-Szene</h3><button onclick="closeModal('online-rule-modal')">×</button></div>
+      <div class="modal-head"><h3>Live-Regel für Streamer</h3><button onclick="closeModal('online-rule-modal')">×</button></div>
       <form id="online-rule-form">
         <input type="hidden" id="online-rule-id">
         <div class="form-grid">
@@ -224,9 +220,10 @@
           <label>Vorlage<select id="online-rule-preset"></select></label>
           <label class="inline inline-box"><input type="checkbox" id="online-rule-enabled" checked> Aktiviert</label>
         </div>
-        <div class="panel note-panel"><strong>Schnellstart:</strong><span>„Live-Look auf alle“ füllt alle Lampen direkt mit einer soliden Startfarbe. Einzelne Lampen kannst du danach noch feinjustieren, pro Lampe ein eigenes Rotationsintervall setzen oder per „Auf alle kopieren“ spiegeln.</span></div>
+        <div class="panel note-panel"><strong>Direkter Live-Flow:</strong><span>Wähle unten genau die Lampen aus, die dieser Streamer im Live-Fall steuern soll. Pro Lampe kannst du sofort Farbe oder Effekt auswählen und zusätzlich eine eigene Rotationszeit setzen. Wenn mehrere Streamer dieselbe Lampe live belegen, rotiert diese Lampe mit genau dieser Zeit zwischen den aktiven Live-Zielen.</span></div>
         <div class="actions-row compact-bottom"><button type="button" class="btn btn-secondary" id="online-copy-live-btn">Live-Look auf alle</button><div id="online-target-summary" class="meta"></div></div>
         <div id="online-rule-targets" class="targets"></div>
+        <div class="priority-box compact-bottom"><strong>Priorität:</strong> Chat-Regeln bleiben Overrides und gewinnen weiterhin gegen Live-Regeln, wenn dieselbe Lampe betroffen ist.</div>
         <div class="actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div>
       </form>
     </div>

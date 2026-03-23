@@ -192,7 +192,6 @@ function renderAll() {
   renderDashboard();
   renderLamps();
   renderStreamers();
-  renderOnlineRules();
   renderChatRules();
   renderLogs();
   renderSettings();
@@ -323,13 +322,34 @@ window.diagnoseLamp = async function(id) {
 };
 
 function renderStreamers() {
-  byId('streamer-list').innerHTML = state.streamers.map((s) => `<div class="card comfort-card"><div><strong>${escapeHtml(s.login)}</strong><div class="meta">${s.enabled ? 'aktiv' : 'inaktiv'}</div></div><div class="actions"><button class="btn btn-secondary" onclick="editStreamer('${s.id}')">Bearbeiten</button><button class="btn btn-danger" onclick="deleteEntity('/streamers/${s.id}')">Löschen</button></div></div>`).join('') || '<div class="muted">Noch keine Streamer.</div>';
+  byId('streamer-list').innerHTML = state.streamers.map((s) => {
+    const rule = state.onlineRules.find((entry) => entry.streamer_id === s.id);
+    const liveNow = state.status?.twitch?.onlineStreamers?.includes(s.login);
+    return `<div class="card comfort-card">
+      <div>
+        <strong>${escapeHtml(s.login)}</strong>
+        <div class="meta">${s.enabled ? 'aktiv' : 'inaktiv'}${liveNow ? ' · gerade live erkannt' : ''}</div>
+        <div class="meta">${rule ? `${rule.targets.length} Live-Lampen zugewiesen · ${rule.enabled ? 'Live-Regel aktiv' : 'Live-Regel inaktiv'}` : 'Noch keine Live-Regel für diesen Streamer.'}</div>
+        <div class="meta">${rule ? escapeHtml(summarizeTargets(rule.targets, { includeRotation: true })) : 'Lege hier direkt fest, welche Lampe bei Live-Status welche Farbe / welchen Effekt bekommt.'}</div>
+        <div class="priority-box spaced-top">Chat-Regeln behalten Vorrang: Wenn eine Chat-Regel dieselbe Lampe gerade belegt, überschreibt sie die Live-Regel weiterhin automatisch.</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-secondary" onclick="${rule ? `editOnlineRule('${rule.id}')` : `createOnlineRuleForStreamer('${s.id}')`}">${rule ? 'Live-Regel bearbeiten' : 'Live-Regel anlegen'}</button>
+        <button class="btn btn-secondary" onclick="editStreamer('${s.id}')">Streamer bearbeiten</button>
+        ${rule ? `<button class="btn btn-danger" onclick="deleteEntity('/online-rules/${rule.id}')">Live-Regel löschen</button>` : ''}
+        <button class="btn btn-danger" onclick="deleteEntity('/streamers/${s.id}')">Streamer löschen</button>
+      </div>
+    </div>`;
+  }).join('') || '<div class="muted">Noch keine Streamer.</div>';
 }
 window.editStreamer = function(id) { const s = state.streamers.find((x) => x.id === id); if (!s) return; byId('streamer-id').value = s.id; byId('streamer-login').value = s.login; byId('streamer-enabled').checked = s.enabled; openModal('streamer-modal'); };
+window.createOnlineRuleForStreamer = function(streamerId) {
+  resetOnlineRuleForm();
+  fillStreamerSelects(streamerId, null);
+  byId('online-rule-streamer').value = streamerId;
+  openModal('online-rule-modal');
+};
 
-function renderOnlineRules() {
-  byId('online-rule-list').innerHTML = state.onlineRules.map((rule) => `<div class="card comfort-card"><div><strong>${escapeHtml(rule.streamer_login)}</strong><div class="meta">${rule.targets.length} Lampen · ${rule.enabled ? 'aktiv' : 'inaktiv'} · eigene Rotation pro Lampen-Ziel</div><div class="meta">${escapeHtml(summarizeTargets(rule.targets, { includeRotation: true }))}</div></div><div class="actions"><button class="btn btn-secondary" onclick="editOnlineRule('${rule.id}')">Bearbeiten</button><button class="btn btn-danger" onclick="deleteEntity('/online-rules/${rule.id}')">Löschen</button></div></div>`).join('') || '<div class="muted">Noch keine Online-Szenen.</div>';
-}
 window.editOnlineRule = function(id) {
   const rule = state.onlineRules.find((x) => x.id === id); if (!rule) return;
   byId('online-rule-id').value = rule.id;
@@ -428,15 +448,15 @@ function renderTargets(containerId, values = null) {
     return `
       <div class="target-card" data-target-card="${lamp.id}">
         <div class="target-top">
-          <label class="inline"><input type="checkbox" data-field="enabled" data-lamp="${lamp.id}" ${checked ? 'checked' : ''}> ${escapeHtml(lamp.name)}</label>
+          <label class="inline"><input type="checkbox" data-field="enabled" data-lamp="${lamp.id}" ${checked ? 'checked' : ''}> ${escapeHtml(lamp.name)} dieser Regel zuweisen</label>
           <span class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${(lamp.effects || []).length} Effekte</span>
         </div>
-        <label>Modus<select data-field="mode" data-lamp="${lamp.id}"><option value="static" ${target.mode !== 'effect' ? 'selected' : ''}>Statisch</option><option value="effect" ${target.mode === 'effect' ? 'selected' : ''}>Effekt</option></select></label>
-        <label>Farbe<input type="color" data-field="color" data-lamp="${lamp.id}" value="${escapeHtml(target.color || '#9147ff')}"></label>
-        <label>Effekt<select data-field="effect_name" data-lamp="${lamp.id}"><option value="">Bitte wählen</option>${effects}</select></label>
-        <label>Speed<input type="range" min="0" max="255" value="${Number(target.effect_speed || 128)}" data-field="effect_speed" data-lamp="${lamp.id}"></label>
-        <label>Intensität<input type="range" min="0" max="255" value="${Number(target.effect_intensity || 128)}" data-field="effect_intensity" data-lamp="${lamp.id}"></label>
-        <label>Rotation (Sek.)<input type="number" min="5" max="600" value="${Math.max(5, Number(target.rotation_seconds || state.settings?.rotation_seconds || 20))}" data-field="rotation_seconds" data-lamp="${lamp.id}"></label>
+        <label>Live-Modus<select data-field="mode" data-lamp="${lamp.id}"><option value="static" ${target.mode !== 'effect' ? 'selected' : ''}>Farbe</option><option value="effect" ${target.mode === 'effect' ? 'selected' : ''}>Effekt</option></select></label>
+        <label>Live-Farbe<input type="color" data-field="color" data-lamp="${lamp.id}" value="${escapeHtml(target.color || '#9147ff')}"></label>
+        <label>Live-Effekt<select data-field="effect_name" data-lamp="${lamp.id}"><option value="">Bitte wählen</option>${effects}</select></label>
+        <label>Effekt-Speed<input type="range" min="0" max="255" value="${Number(target.effect_speed || 128)}" data-field="effect_speed" data-lamp="${lamp.id}"></label>
+        <label>Effekt-Intensität<input type="range" min="0" max="255" value="${Number(target.effect_intensity || 128)}" data-field="effect_intensity" data-lamp="${lamp.id}"></label>
+        <label>Rotation pro Lampe (Sek.)<input type="number" min="5" max="600" value="${Math.max(5, Number(target.rotation_seconds || state.settings?.rotation_seconds || 20))}" data-field="rotation_seconds" data-lamp="${lamp.id}"></label>
         <div class="target-actions">
           <button type="button" class="btn btn-ghost" onclick="copyTargetToAll('${containerId}','${lamp.id}')">Auf alle kopieren</button>
           <button type="button" class="btn btn-ghost" onclick="previewTarget('${lamp.id}','${containerId}')">Jetzt testen</button>
