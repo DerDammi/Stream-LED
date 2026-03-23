@@ -1,9 +1,0 @@
-services:
-  streamlight:
-    build: ..
-    container_name: streamlight-orchestrator
-    ports:
-      - "3017:3017"
-    volumes:
-      - ../data:/app/data
-    restart: unless-stopped

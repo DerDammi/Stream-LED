@@ -4,3 +4,17 @@ data/
 *.db
 *.db-wal
 *.db-shm
+.openclaw/
+AGENTS.md
+BOOTSTRAP.md
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+TOOLS.md
+USER.md
+memory/
+tled_project/
+node_modules/
+data/*.db
+data/*.db-shm
+data/*.db-wal
