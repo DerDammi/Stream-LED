@@ -1,6 +1,38 @@
-# Twitch Lamp Controller V1.4.2
+# Twitch Lamp Controller
 
-Lokales Webinterface für WLED- und Govee-Lampen mit Twitch-Anbindung.
+Lokales Webinterface für WLED-, Govee- und Philips-Hue-Lampen mit Twitch-Anbindung.
+
+## Zusammenfassung
+
+Dieses Projekt ist ein lokaler Lampen-Controller mit Webinterface.
+Er reagiert auf:
+- **Streamer, die live sind**
+- **Chat-Regeln** auf Basis von Emotes oder freiem Text
+
+Du kannst damit:
+- Lampen hinzufügen und technisch verwalten
+- Streamer anlegen
+- pro Streamer festlegen, **welche Lampen** genutzt werden
+- pro zugewiesener Lampe festlegen:
+  - Farbe
+  - Effekt
+  - Rotationszeit
+- Chat-Regeln anlegen, die die normale Live-Anzeige überschreiben
+
+## Kernfunktionen
+
+- Webinterface für lokale Nutzung
+- WLED Support
+- Govee Support
+- Philips Hue Support (lokal, pragmatisch)
+- Twitch OAuth Login
+- Live-Erkennung für Streamer
+- lampenspezifische Rotation bei mehreren live Streamern
+- Chat-Regeln mit Sliding-Window-Logik
+- Diagnose / Discovery / Tests
+- Import / Export der Konfiguration
+- HTTP und HTTPS (selbstsigniertes Zertifikat)
+
 
 ## Was in V1.5.0 besser ist
 
@@ -44,29 +76,40 @@ Lokales Webinterface für WLED- und Govee-Lampen mit Twitch-Anbindung.
 - Chat-Regeln über Sliding Window (`x Treffer in y Sekunden`)
 - pro Lampe eigene Rotation zwischen den gerade live zugewiesenen Streamern
 
-## Start lokal
+## Installation
+
+### Voraussetzungen
+
+Du brauchst:
+- Node.js
+- npm
+- Zugriff auf dein lokales Netzwerk, wenn du Lampen im LAN steuern willst
+
+### Lokale Installation
 
 ```bash
+git clone https://github.com/DerDammi/Stream-LED.git
+cd Stream-LED/led-stream-controller
 npm install
 npm start
 ```
 
 Dann öffnen:
-
 - HTTP: <http://localhost:3847>
 - HTTPS (selbstsigniert): <https://localhost:3443>
 
 Für HTTPS liegt ein selbstsigniertes Zertifikat im Ordner `certs/`. Im Browser musst du die Warnung einmal bestätigen.
 
-## Docker
+### Docker
 
 ```bash
+cd Stream-LED/led-stream-controller
 docker compose up -d --build
 ```
 
 Dann öffnen:
+- HTTP: <http://localhost:3847>
 
-<http://localhost:3847>
 
 ## Twitch Einrichtung
 
