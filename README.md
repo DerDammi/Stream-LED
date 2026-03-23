@@ -103,13 +103,16 @@ Für HTTPS liegt ein selbstsigniertes Zertifikat im Ordner `certs/`. Im Browser 
 ### Docker
 
 ```bash
-cd Stream-LED/led-stream-controller
 docker compose up -d --build
 ```
 
 Dann öffnen:
 - HTTP: <http://localhost:3847>
+- HTTPS: <https://localhost:3443>
 
+Die Container-Konfiguration veröffentlicht beide Ports:
+- `3847` für HTTP
+- `3443` für HTTPS
 
 ## Twitch Einrichtung
 

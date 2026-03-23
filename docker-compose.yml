@@ -4,6 +4,10 @@ services:
     container_name: twitch-lamp-controller
     ports:
       - "3847:3847"
+      - "3443:3443"
     volumes:
       - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - BIND_HOST=0.0.0.0
     restart: unless-stopped
