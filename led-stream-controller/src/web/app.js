@@ -270,18 +270,15 @@ function renderDashboard() {
 
 function renderLamps() {
   byId('lamp-list').innerHTML = state.lamps.map((lamp) => {
-    const effectOptions = (lamp.effects || []).slice(0, 12).map((fx) => `<option value="${escapeHtml(String(fx.id ?? fx.name))}">${escapeHtml(fx.name ?? fx.id)}</option>`).join('');
     return `
       <div class="card comfort-card lamp-card">
         <div>
           <strong>${escapeHtml(lamp.name)}</strong>
           <div class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${escapeHtml(lamp.address)} · ${(lamp.effects || []).length} Effekte · ${lamp.last_seen ? 'online' : 'offline'}</div>
           <div class="lamp-test-row">
-            <input type="color" id="lamp-color-${lamp.id}" value="#44ccff" title="Testfarbe">
-            <select id="lamp-effect-${lamp.id}"><option value="">Effekt wählen</option>${effectOptions}</select>
-            <button class="btn btn-secondary" onclick="testLampColor('${lamp.id}')">Farbe testen</button>
-            <button class="btn btn-secondary" onclick="testLampEffect('${lamp.id}')">Effekt testen</button>
+            <button class="btn btn-secondary" onclick="testLamp('${lamp.id}')">Kurztest</button>
             <button class="btn btn-secondary" onclick="testLampOff('${lamp.id}')">Aus</button>
+            <span class="meta">Kurztest schickt eine feste Testfarbe nur zur Geräteprüfung.</span>
           </div>
           <div class="actions-row compact-top">
             <button class="btn btn-ghost" onclick="diagnoseLamp('${lamp.id}')">Diagnose</button>
@@ -310,8 +307,7 @@ window.editLamp = function(id) {
   openModal('lamp-modal');
 };
 window.refreshLampEffects = async function(id) { await api(`/lamps/${id}/refresh-effects`, { method: 'POST' }); toast('Effektliste aktualisiert.'); await refreshAll(); };
-window.testLampColor = async function(id) { const color = byId(`lamp-color-${id}`).value; await api(`/lamps/${id}/test`, { method: 'POST', body: JSON.stringify({ action: 'color', color }) }); toast('Testfarbe gesendet.'); };
-window.testLampEffect = async function(id) { const effect_name = byId(`lamp-effect-${id}`).value; if (!effect_name) return toast('Bitte erst einen Effekt wählen.', true); await api(`/lamps/${id}/test`, { method: 'POST', body: JSON.stringify({ action: 'effect', effect_name, effect_speed: 128, effect_intensity: 128 }) }); toast('Effekt-Test gesendet.'); };
+window.testLamp = async function(id) { await api(`/lamps/${id}/test`, { method: 'POST', body: JSON.stringify({ action: 'color', color: '#44ccff' }) }); toast('Kurztest gesendet.'); };
 window.testLampOff = async function(id) { await api(`/lamps/${id}/test`, { method: 'POST', body: JSON.stringify({ action: 'off' }) }); toast('Lampe ausgeschaltet.'); };
 window.diagnoseLamp = async function(id) {
   const data = await api(`/lamps/${id}/diagnose`, { method: 'POST' });
