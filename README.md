@@ -89,7 +89,7 @@ Du brauchst:
 
 ```bash
 git clone https://github.com/DerDammi/Stream-LED.git
-cd Stream-LED/led-stream-controller
+cd Stream-LED
 npm install
 npm start
 ```
@@ -100,7 +100,21 @@ Dann öffnen:
 
 Für HTTPS liegt ein selbstsigniertes Zertifikat im Ordner `certs/`. Im Browser musst du die Warnung einmal bestätigen.
 
-### Docker
+## Docker Overview
+
+Dieses Projekt kann direkt per Docker oder Docker Compose betrieben werden.
+
+### Enthalten
+- `Dockerfile` für den App-Container
+- `docker-compose.yml` für den schnellen lokalen Start
+- persistente Daten unter `./data`
+- HTTP und HTTPS im Container
+
+### Verwendete Ports
+- `3847` = HTTP
+- `3443` = HTTPS
+
+### Container starten
 
 ```bash
 docker compose up -d --build
@@ -110,9 +124,43 @@ Dann öffnen:
 - HTTP: <http://localhost:3847>
 - HTTPS: <https://localhost:3443>
 
-Die Container-Konfiguration veröffentlicht beide Ports:
-- `3847` für HTTP
-- `3443` für HTTPS
+### Container stoppen
+
+```bash
+docker compose down
+```
+
+### Logs ansehen
+
+```bash
+docker compose logs -f
+```
+
+### Image lokal bauen
+
+```bash
+docker build -t derdammi/stream-led:latest .
+```
+
+### Image auf Docker Hub hochladen
+
+```bash
+docker login
+docker push derdammi/stream-led:latest
+```
+
+### Optional mit Version-Tag
+
+```bash
+docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.5.0 .
+docker push derdammi/stream-led:latest
+docker push derdammi/stream-led:1.5.0
+```
+
+### Wichtige Hinweise
+- Die App speichert Daten lokal in `./data`
+- Für Twitch OAuth ist lokal meist `http://localhost:3847/oauth/callback` der richtige Startpunkt
+- HTTPS nutzt ein selbstsigniertes Zertifikat. Browser zeigen dabei zunächst eine Warnung an
 
 ## Twitch Einrichtung
 
