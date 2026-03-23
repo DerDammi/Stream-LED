@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Streamlight Orchestrator</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="container">
+    <section class="hero card">
+      <div><p class="eyebrow">Lokale Twitch-Lichtsteuerung</p><h1>Streamlight Orchestrator</h1><p class="muted">WLED, Govee und Hue lokal mit Twitch-Status, Emotes und Events steuern.</p></div>
+      <div class="hero-actions"><button onclick="reload()">Aktualisieren</button><button class="secondary" onclick="scrollToSection('setupCard')">Setup</button></div>
+    </section>
+    <section class="status-grid">
+      <div class="status-card card"><span class="status-label">Auth</span><strong id="statusAuth">-</strong><span class="muted small" id="statusAuthDetail"></span></div>
+      <div class="status-card card"><span class="status-label">Lampen online</span><strong id="statusLamps">0 / 0</strong><span class="muted small">lokal geprüft</span></div>
+      <div class="status-card card"><span class="status-label">Streamer live</span><strong id="statusStreamers">0 / 0</strong><span class="muted small">Twitch API</span></div>
+      <div class="status-card card"><span class="status-label">Regeln aktiv</span><strong id="statusRules">0</strong><span class="muted small">gesamt</span></div>
+    </section>
+    <section class="tabs card">
+      <div class="tab-bar">
+        <button class="tab active" data-tab="dashboard" onclick="setTab('dashboard')">Dashboard</button>
+        <button class="tab" data-tab="setup" onclick="setTab('setup')">Setup & System</button>
+        <button class="tab" data-tab="lamps" onclick="setTab('lamps')">Lampen</button>
+        <button class="tab" data-tab="streamers" onclick="setTab('streamers')">Streamer</button>
+        <button class="tab" data-tab="rules" onclick="setTab('rules')">Regeln</button>
+      </div>
+      <div class="tab-panel active" data-panel="dashboard">
+        <section class="card nested"><h2>Schnellüberblick</h2><div id="dashboardSummary" class="list"></div></section>
+      </div>
+      <div class="tab-panel" data-panel="setup">
+        <section class="card nested" id="setupCard">
+          <h2>Twitch & Sicherheit</h2>
+          <div class="grid three">
+            <label>Auth-Modus<select id="authMode"><option value="oauth">Twitch Login/Token</option><option value="api">API-Zugangsdaten</option></select></label>
+            <label>Twitch Benutzername<input id="username" /></label>
+            <label>OAuth Token<input id="oauthToken" /></label>
+            <label>Client ID<input id="clientId" /></label>
+            <label>Client Secret<input id="clientSecret" /></label>
+            <label>UI Passwort<input id="uiPassword" type="password" placeholder="leer = aus" /></label>
+          </div>
+          <div class="actions"><button onclick="saveSetup()">Setup speichern</button><button onclick="startTwitchOAuth()">Mit Twitch anmelden</button></div>
+          <p class="muted small">Redirect URI: <code id="oauthRedirectUri">-</code></p>
+        </section>
+        <section class="card nested">
+          <h2>EventSub</h2>
+          <div class="grid three">
+            <label>Public URL<input id="eventSubPublicUrl" placeholder="https://deine-domain.tld" /></label>
+            <label>Webhook Secret<input id="eventSubSecret" type="password" /></label>
+            <label>Streamer Login für Subscription<input id="eventSubStreamerLogin" placeholder="deinstreamer" /></label>
+          </div>
+          <div class="actions"><button onclick="saveSettings()">Einstellungen speichern</button><button onclick="subscribeEventSub()">EventSub anlegen</button></div>
+          <p class="muted small">Webhook Endpoint: <code>/api/eventsub/webhook</code></p>
+        </section>
+        <section class="card nested">
+          <h2>Philips Hue</h2>
+          <div class="grid three">
+            <label>Bridge IP<input id="hueBridgeIp" /></label>
+            <label>Hue Username / API Key<input id="hueUsername" /></label>
+            <label>Lichter<select id="hueLightSelect"></select></label>
+          </div>
+          <div class="actions"><button class="secondary" onclick="discoverHue()">Hue Bridges suchen</button><button class="secondary" onclick="pairHue()">Hue koppeln</button><button class="secondary" onclick="loadHueLights()">Hue Lichter laden</button></div>
+          <div id="hueDiscovery"></div>
+        </section>
+        <section class="card nested">
+          <h2>Globale Einstellungen</h2>
+          <div class="grid three"><label>Online-Polling (Sek.)<input type="number" id="onlinePollSeconds" min="10" /></label><label>Rotation (Sek.)<input type="number" id="rotationSeconds" min="5" /></label><label>Healthcheck (Sek.)<input type="number" id="healthPollSeconds" min="10" /></label></div>
+          <div class="actions"><button onclick="saveSettings()">Einstellungen speichern</button><button class="secondary" onclick="exportConfig()">Config exportieren</button></div>
+          <label>Config importieren (JSON)<textarea id="importJson" rows="8"></textarea></label>
+          <button class="secondary" onclick="importConfig()">Config importieren</button>
+        </section>
+      </div>
+      <div class="tab-panel" data-panel="lamps">
+        <section class="card nested"><h2>Lampe anlegen / bearbeiten</h2><input type="hidden" id="lampEditId" /><div class="grid three"><label>Name<input id="lampName" /></label><label>Provider<select id="lampProvider"><option value="wled">WLED</option><option value="govee">Govee</option><option value="hue">Philips Hue</option></select></label><label>Host/IP<input id="lampHost" /></label><label>SKU (Govee)<input id="lampSku" /></label><label>Custom Effects (eine pro Zeile)<textarea id="lampCustomEffects" rows="5"></textarea></label><label>Hue Light<select id="lampHueLightId"></select></label></div><div class="actions"><button onclick="saveLampForm()">Speichern</button><button class="secondary" onclick="resetLampForm()">Zurücksetzen</button><button class="secondary" onclick="discoverGovee()">Govee suchen</button></div><div id="goveeDiscovery"></div></section>
+        <section class="card nested"><h2>Vorhandene Lampen</h2><div id="lamps"></div></section>
+      </div>
+      <div class="tab-panel" data-panel="streamers"><section class="card nested"><h2>Streamer anlegen / bearbeiten</h2><input type="hidden" id="streamerEditId" /><div class="grid three"><label>Name<input id="streamerName" /></label><label>Twitch Login<input id="streamerLogin" /></label><label>Chat-Kanäle (Komma)<input id="streamerChannels" /></label></div><label class="checkbox-row"><input type="checkbox" id="streamerEventsEnabled" checked /> Event-Effekte erlauben</label><div class="actions"><button onclick="saveStreamerForm()">Speichern</button><button class="secondary" onclick="resetStreamerForm()">Zurücksetzen</button></div></section><section class="card nested"><h2>Vorhandene Streamer</h2><div id="streamers"></div></section></div>
+      <div class="tab-panel" data-panel="rules">
+        <section class="card nested"><h2>Online-Regel</h2><div class="grid two"><input type="hidden" id="onlineRuleId" /><label>Streamer<select id="onlineStreamer"></select></label><label>Lampen<select id="onlineLamps" multiple></select></label><label>Farbe<input type="color" id="onlineColor" value="#9146ff" /></label><label>Modus<select id="onlineMode"><option value="static">Statisch</option><option value="effect">Effekt</option></select></label><label>WLED Effekt-ID<input type="number" id="onlineEffectId" value="0" /></label><label>Effektname<input id="onlineEffectName" /></label></div><div class="actions"><button onclick="saveOnlineRule()">Regel speichern</button><button class="secondary" onclick="resetOnlineRuleForm()">Zurücksetzen</button></div><div id="onlineRules"></div></section>
+        <section class="card nested"><h2>Emote-Regel</h2><div class="grid three"><input type="hidden" id="emoteRuleId" /><label>Streamer<select id="emoteStreamer"></select></label><label>Emote/Text<input id="emoteName" /></label><label>Dauer (Sek.)<input type="number" id="emoteDuration" value="10" min="1" /></label><label>Lampen<select id="emoteLamps" multiple></select></label><label>Farbe<input type="color" id="emoteColor" value="#00ffcc" /></label><label>Modus<select id="emoteMode"><option value="static">Statisch</option><option value="effect">Effekt</option></select></label><label>WLED Effekt-ID<input type="number" id="emoteEffectId" value="0" /></label><label>Effektname<input id="emoteEffectName" /></label></div><div class="actions"><button onclick="saveEmoteRule()">Regel speichern</button><button class="secondary" onclick="resetEmoteRuleForm()">Zurücksetzen</button></div><div id="emoteRules"></div></section>
+        <section class="card nested"><h2>Event-Regel</h2><div class="grid three"><input type="hidden" id="eventRuleId" /><label>Streamer<select id="eventStreamer"></select></label><label>Event-Key<input id="eventKey" /></label><label>Dauer (Sek.)<input type="number" id="eventDuration" value="12" min="1" /></label><label>Lampen<select id="eventLamps" multiple></select></label><label>Farbe<input type="color" id="eventColor" value="#ff9900" /></label><label>Modus<select id="eventMode"><option value="static">Statisch</option><option value="effect">Effekt</option></select></label><label>WLED Effekt-ID<input type="number" id="eventEffectId" value="0" /></label><label>Effektname<input id="eventEffectName" /></label></div><div class="actions"><button onclick="saveEventRule()">Regel speichern</button><button class="secondary" onclick="resetEventRuleForm()">Zurücksetzen</button></div><div id="eventRules"></div></section>
+      </div>
+    </section>
+    <div id="toast" class="toast"></div>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

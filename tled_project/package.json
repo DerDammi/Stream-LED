@@ -1,0 +1,21 @@
+{
+  "name": "streamlight-orchestrator",
+  "version": "0.1.0",
+  "description": "Lokales Webinterface zur Steuerung von WLED- und Govee-Lampen über Twitch-Streamer-Status, Emotes und Events.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "archive": "tar -czf streamlight-orchestrator.tar.gz src public data docker README.md package.json streamlight-orchestrator.service Dockerfile .dockerignore"
+  },
+  "dependencies": {
+    "axios": "^1.11.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "eventemitter3": "^5.0.1",
+    "fs-extra": "^11.3.0",
+    "nanoid": "^5.1.5",
+    "tmi.js": "^1.8.5"
+  }
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=Streamlight Orchestrator
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/dammi/.openclaw/workspace
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+User=dammi
+
+[Install]
+WantedBy=multi-user.target
