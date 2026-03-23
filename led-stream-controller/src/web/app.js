@@ -325,19 +325,27 @@ function renderStreamers() {
   byId('streamer-list').innerHTML = state.streamers.map((s) => {
     const rule = state.onlineRules.find((entry) => entry.streamer_id === s.id);
     const liveNow = state.status?.twitch?.onlineStreamers?.includes(s.login);
-    return `<div class="card comfort-card">
+    const assignedTargets = rule?.targets?.length || 0;
+    const compactSummary = rule
+      ? escapeHtml(summarizeTargets(rule.targets, { includeRotation: true }).split(' · ').slice(0, 2).join(' · ')) + (assignedTargets > 2 ? ' …' : '')
+      : 'Noch keine Live-Regel';
+    return `<div class="card comfort-card streamer-card">
       <div>
-        <strong>${escapeHtml(s.login)}</strong>
-        <div class="meta">${s.enabled ? 'aktiv' : 'inaktiv'}${liveNow ? ' · gerade live erkannt' : ''}</div>
-        <div class="meta">${rule ? `${rule.targets.length} Live-Lampen zugewiesen · ${rule.enabled ? 'Live-Regel aktiv' : 'Live-Regel inaktiv'}` : 'Noch keine Live-Regel für diesen Streamer.'}</div>
-        <div class="meta">${rule ? escapeHtml(summarizeTargets(rule.targets, { includeRotation: true })) : 'Lege hier direkt fest, welche Lampe bei Live-Status welche Farbe / welchen Effekt bekommt.'}</div>
-        <div class="priority-box spaced-top">Chat-Regeln behalten Vorrang: Wenn eine Chat-Regel dieselbe Lampe gerade belegt, überschreibt sie die Live-Regel weiterhin automatisch.</div>
+        <div class="streamer-head">
+          <strong>${escapeHtml(s.login)}</strong>
+          <div class="chips compact-chips">
+            <span class="chip ${s.enabled ? '' : 'chip-muted'}">${s.enabled ? 'aktiv' : 'inaktiv'}</span>
+            ${liveNow ? '<span class="chip live">live</span>' : ''}
+            <span class="chip ${rule?.enabled ? '' : 'chip-muted'}">${rule ? `${assignedTargets} Lampen` : 'keine Regel'}</span>
+          </div>
+        </div>
+        <div class="meta">${compactSummary}</div>
       </div>
       <div class="actions">
-        <button class="btn btn-secondary" onclick="${rule ? `editOnlineRule('${rule.id}')` : `createOnlineRuleForStreamer('${s.id}')`}">${rule ? 'Live-Regel bearbeiten' : 'Live-Regel anlegen'}</button>
-        <button class="btn btn-secondary" onclick="editStreamer('${s.id}')">Streamer bearbeiten</button>
-        ${rule ? `<button class="btn btn-danger" onclick="deleteEntity('/online-rules/${rule.id}')">Live-Regel löschen</button>` : ''}
-        <button class="btn btn-danger" onclick="deleteEntity('/streamers/${s.id}')">Streamer löschen</button>
+        <button class="btn btn-secondary" onclick="${rule ? `editOnlineRule('${rule.id}')` : `createOnlineRuleForStreamer('${s.id}')`}">${rule ? 'Live-Regel' : 'Regel anlegen'}</button>
+        <button class="btn btn-secondary" onclick="editStreamer('${s.id}')">Streamer</button>
+        ${rule ? `<button class="btn btn-danger" onclick="deleteEntity('/online-rules/${rule.id}')">Regel löschen</button>` : ''}
+        <button class="btn btn-danger" onclick="deleteEntity('/streamers/${s.id}')">Löschen</button>
       </div>
     </div>`;
   }).join('') || '<div class="muted">Noch keine Streamer.</div>';
@@ -429,7 +437,19 @@ function renderSettings() {
       : 'Noch kein Regel-Test gelaufen.';
   }
 }
-function fillStreamerSelects(onlineValue = null, chatValue = null) { const options = ['<option value="">Bitte wählen</option>'].concat(state.streamers.map((s) => `<option value="${s.id}">${escapeHtml(s.login)}</option>`)).join(''); byId('online-rule-streamer').innerHTML = options; byId('chat-rule-streamer').innerHTML = options; if (onlineValue) byId('online-rule-streamer').value = onlineValue; if (chatValue) byId('chat-rule-streamer').value = chatValue; }
+function fillStreamerSelects(onlineValue = null, chatValue = null) {
+  const onlineSelect = byId('online-rule-streamer');
+  const chatSelect = byId('chat-rule-streamer');
+  const preservedOnlineValue = onlineValue ?? onlineSelect?.value ?? '';
+  const preservedChatValue = chatValue ?? chatSelect?.value ?? '';
+  const options = ['<option value="">Bitte wählen</option>']
+    .concat(state.streamers.map((s) => `<option value="${s.id}">${escapeHtml(s.login)}</option>`))
+    .join('');
+  onlineSelect.innerHTML = options;
+  chatSelect.innerHTML = options;
+  onlineSelect.value = state.streamers.some((s) => s.id === preservedOnlineValue) ? preservedOnlineValue : '';
+  chatSelect.value = state.streamers.some((s) => s.id === preservedChatValue) ? preservedChatValue : '';
+}
 function fillRuleTestSelects() {
   const online = byId('rule-test-online');
   const chat = byId('rule-test-chat');
@@ -451,9 +471,9 @@ function renderTargets(containerId, values = null) {
           <label class="inline"><input type="checkbox" data-field="enabled" data-lamp="${lamp.id}" ${checked ? 'checked' : ''}> ${escapeHtml(lamp.name)} dieser Regel zuweisen</label>
           <span class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${(lamp.effects || []).length} Effekte</span>
         </div>
-        <label>Live-Modus<select data-field="mode" data-lamp="${lamp.id}"><option value="static" ${target.mode !== 'effect' ? 'selected' : ''}>Farbe</option><option value="effect" ${target.mode === 'effect' ? 'selected' : ''}>Effekt</option></select></label>
-        <label>Live-Farbe<input type="color" data-field="color" data-lamp="${lamp.id}" value="${escapeHtml(target.color || '#9147ff')}"></label>
-        <label>Live-Effekt<select data-field="effect_name" data-lamp="${lamp.id}"><option value="">Bitte wählen</option>${effects}</select></label>
+        <label>Modus<select data-field="mode" data-lamp="${lamp.id}"><option value="static" ${target.mode !== 'effect' ? 'selected' : ''}>Farbe</option><option value="effect" ${target.mode === 'effect' ? 'selected' : ''}>Effekt</option></select></label>
+        <label>Farbe<input type="color" data-field="color" data-lamp="${lamp.id}" value="${escapeHtml(target.color || '#9147ff')}"></label>
+        <label>Effekt<select data-field="effect_name" data-lamp="${lamp.id}"><option value="">Bitte wählen</option>${effects}</select></label>
         <label>Effekt-Speed<input type="range" min="0" max="255" value="${Number(target.effect_speed || 128)}" data-field="effect_speed" data-lamp="${lamp.id}"></label>
         <label>Effekt-Intensität<input type="range" min="0" max="255" value="${Number(target.effect_intensity || 128)}" data-field="effect_intensity" data-lamp="${lamp.id}"></label>
         <label>Rotation pro Lampe (Sek.)<input type="number" min="5" max="600" value="${Math.max(5, Number(target.rotation_seconds || state.settings?.rotation_seconds || 20))}" data-field="rotation_seconds" data-lamp="${lamp.id}"></label>
