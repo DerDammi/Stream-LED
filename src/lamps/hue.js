@@ -167,7 +167,8 @@ class HueController {
     }
   }
 
-  async setEffect(lamp, effectId) {
+  async setEffect(lamp, effectId, opts = {}) {
+    if (opts.primaryColor) await this.setColor(lamp, opts.primaryColor);
     if (String(effectId) === 'blink') {
       const { bridgeIp, lightId, username } = this.parseLamp(lamp);
       if (!bridgeIp || !lightId || !username) return false;
@@ -180,7 +181,7 @@ class HueController {
         return false;
       }
     }
-    return this.setColor(lamp, '#9147ff');
+    return this.setColor(lamp, opts.primaryColor || '#9147ff');
   }
 
   async setOff(lamp) {

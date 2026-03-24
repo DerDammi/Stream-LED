@@ -285,6 +285,7 @@ function parseTargetsRule(row) {
   const fallbackRotation = getSetting('rotation_seconds', 20);
   const targets = JSON.parse(row.targets_json || '[]').map((target) => ({
     ...target,
+    secondary_color: /^#[0-9a-f]{6}$/i.test(String(target?.secondary_color || '')) ? String(target.secondary_color) : '#ffffff',
     rotation_seconds: Math.max(5, Number(target?.rotation_seconds || fallbackRotation || 20))
   }));
   return { ...row, enabled: !!row.enabled, targets };

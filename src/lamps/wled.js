@@ -2,6 +2,16 @@ const http = require('http');
 const os = require('os');
 const db = require('../database');
 
+function hexToRgb(hex, fallback = [255, 255, 255]) {
+  const value = String(hex || '').trim();
+  if (!/^#[0-9a-f]{6}$/i.test(value)) return fallback;
+  return [
+    parseInt(value.slice(1, 3), 16),
+    parseInt(value.slice(3, 5), 16),
+    parseInt(value.slice(5, 7), 16)
+  ];
+}
+
 class WLEDController {
   async fetchInfo(address) {
     return new Promise((resolve, reject) => {
@@ -124,7 +134,9 @@ class WLEDController {
 
   async setEffect(lamp, effectId, opts = {}) {
     const resolvedEffect = Number.isFinite(Number(effectId)) ? Number(effectId) : effectId;
-    const state = { on: true, bri: opts.brightness ?? 128, seg: [{ fx: resolvedEffect, sx: opts.speed ?? 128, ix: opts.intensity ?? 128 }] };
+    const primary = hexToRgb(opts.primaryColor || opts.color || '#9147ff', [145, 71, 255]);
+    const secondary = hexToRgb(opts.secondaryColor || '#ffffff', [255, 255, 255]);
+    const state = { on: true, bri: opts.brightness ?? 128, seg: [{ fx: resolvedEffect, sx: opts.speed ?? 128, ix: opts.intensity ?? 128, col: [primary, secondary] }] };
     try {
       await this.sendCommand(lamp.address, state);
       db.updateLampSeen(lamp.id, true);

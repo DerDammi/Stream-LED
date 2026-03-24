@@ -24,6 +24,7 @@ function sanitizeTargets(targets = []) {
     lamp_id: String(target.lamp_id),
     mode: target.mode === 'effect' ? 'effect' : 'static',
     color: /^#[0-9a-f]{6}$/i.test(String(target.color || '')) ? String(target.color) : '#9147ff',
+    secondary_color: /^#[0-9a-f]{6}$/i.test(String(target.secondary_color || '')) ? String(target.secondary_color) : '#ffffff',
     effect_name: target.effect_name == null ? '' : String(target.effect_name),
     effect_speed: clampByte(target.effect_speed),
     effect_intensity: clampByte(target.effect_intensity),
@@ -107,7 +108,7 @@ function validateSettingsPayload(payload = {}) {
 
 function snapshotConfig() {
   return {
-    version: 6,
+    version: 7,
     exported_at: new Date().toISOString(),
     settings: {
       online_poll_seconds: db.getSetting('online_poll_seconds', 30),
@@ -151,7 +152,7 @@ function analyzeImportPayload(payload) {
     if (!String(rule.match_text || '').trim()) errors.push(`Chat-Regel ${String(rule.name || 'ohne Namen')} hat keinen Match-Text.`);
   }
   if (summary.lamps === 0 && summary.streamers === 0 && summary.onlineRules === 0 && summary.chatRules === 0) warnings.push('Die Datei enthält keine Lampen, Streamer oder Regeln.');
-  if (!summary.version || summary.version < 6) warnings.push('Ältere Config erkannt. Online-Rotationen pro Lampe werden mit der Standard-Rotation aus den Einstellungen ergänzt.');
+  if (!summary.version || summary.version < 7) warnings.push('Ältere Config erkannt. Neue Effektfarben/Fallbacks und Online-Rotationen pro Lampe werden beim Import sinnvoll ergänzt.');
   return { ok: errors.length === 0, errors, warnings, summary };
 }
 
@@ -187,7 +188,7 @@ function applyImportPayload(payload, mode = 'replace') {
   const resolveTarget = (target) => {
     const lampId = target.lamp_id || lampMap.get(`${target.lamp_name || ''}|${target.lamp_address || ''}`) || null;
     if (!lampId || !db.getLamp(lampId)) return null;
-    return { lamp_id: lampId, mode: target.mode === 'effect' ? 'effect' : 'static', color: String(target.color || '#9147ff'), effect_name: target.effect_name == null ? '' : String(target.effect_name), effect_speed: clampByte(target.effect_speed), effect_intensity: clampByte(target.effect_intensity), rotation_seconds: clampRotationSeconds(target.rotation_seconds) };
+    return { lamp_id: lampId, mode: target.mode === 'effect' ? 'effect' : 'static', color: /^#[0-9a-f]{6}$/i.test(String(target.color || '')) ? String(target.color) : '#9147ff', secondary_color: /^#[0-9a-f]{6}$/i.test(String(target.secondary_color || '')) ? String(target.secondary_color) : '#ffffff', effect_name: target.effect_name == null ? '' : String(target.effect_name), effect_speed: clampByte(target.effect_speed), effect_intensity: clampByte(target.effect_intensity), rotation_seconds: clampRotationSeconds(target.rotation_seconds) };
   };
   for (const rule of Array.isArray(payload.onlineRules) ? payload.onlineRules : []) {
     const streamer_id = streamerMap.get(String(rule.streamer_login || '').trim().toLowerCase()) || db.getAllStreamers().find((entry) => entry.login === String(rule.streamer_login || '').trim().toLowerCase())?.id;
@@ -287,7 +288,7 @@ function createApiRouter(effectManager, twitch) {
   router.delete('/lamps/:id', (req, res) => { db.deleteLamp(req.params.id); res.json({ success: true }); });
   router.post('/lamps/:id/refresh-effects', async (req, res) => { const result = await effectManager.refreshLampEffects(req.params.id); res.json({ success: !!result, result, lamp: db.getLamp(req.params.id) }); });
   router.post('/lamps/:id/diagnose', async (req, res) => { try { const result = await effectManager.diagnoseLamp(req.params.id); res.json({ success: true, result, lamp: db.getLamp(req.params.id) }); } catch (error) { res.status(400).json({ error: error.message }); } });
-  router.post('/lamps/:id/test', express.json(), async (req, res) => { const { action, color, effect_name, effect_speed, effect_intensity } = req.body; const ok = action === 'off' ? await effectManager.setLampOff(req.params.id) : action === 'effect' ? await effectManager.setLampEffect(req.params.id, effect_name, { speed: effect_speed, intensity: effect_intensity }) : await effectManager.setLampColor(req.params.id, color || '#ffffff'); res.json({ success: ok }); });
+  router.post('/lamps/:id/test', express.json(), async (req, res) => { const { action, color, secondary_color, effect_name, effect_speed, effect_intensity } = req.body; const ok = action === 'off' ? await effectManager.setLampOff(req.params.id) : action === 'effect' ? await effectManager.setLampEffect(req.params.id, effect_name, { speed: effect_speed, intensity: effect_intensity, primaryColor: color, secondaryColor: secondary_color }) : await effectManager.setLampColor(req.params.id, color || '#ffffff'); res.json({ success: ok }); });
 
   router.get('/streamers', (_req, res) => res.json(db.getAllStreamers()));
   router.post('/streamers', express.json(), async (req, res) => { try { const streamer = db.saveStreamer({ id: uuidv4(), ...validateStreamerPayload(req.body) }); await twitch.refreshChannels(); res.json({ success: true, streamer }); } catch (error) { res.status(400).json({ error: error.message }); } });

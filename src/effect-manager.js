@@ -264,6 +264,7 @@ class EffectManager {
         source: target.source,
         mode: target.mode || 'static',
         color: target.color || '#ffffff',
+        secondary_color: target.secondary_color || '#ffffff',
         effect_name: target.effect_name || '',
         effect_speed: Number(target.effect_speed || 128),
         effect_intensity: Number(target.effect_intensity || 128),
@@ -278,7 +279,7 @@ class EffectManager {
       actions.push({ lamp_id: lamp.id, lamp_name: lamp.name, action: nextState.mode === 'effect' && nextState.effect_name ? 'effect' : 'color', nextState });
       if (dryRun) continue;
       if (nextState.mode === 'effect' && nextState.effect_name) {
-        await this.getController(lamp.type).setEffect(lamp, nextState.effect_name, { speed: nextState.effect_speed, intensity: nextState.effect_intensity });
+        await this.getController(lamp.type).setEffect(lamp, nextState.effect_name, { speed: nextState.effect_speed, intensity: nextState.effect_intensity, primaryColor: nextState.color, secondaryColor: nextState.secondary_color });
       } else {
         await this.getController(lamp.type).setColor(lamp, nextState.color);
       }
@@ -310,7 +311,7 @@ class EffectManager {
     if (!lamp) throw new Error('Lampe für Vorschau nicht gefunden.');
     if (options.dryRun) return { lamp_id: lamp.id, lamp_name: lamp.name, dryRun: true, target };
     if (target.mode === 'effect' && target.effect_name) {
-      await this.getController(lamp.type).setEffect(lamp, target.effect_name, { speed: target.effect_speed, intensity: target.effect_intensity });
+      await this.getController(lamp.type).setEffect(lamp, target.effect_name, { speed: target.effect_speed, intensity: target.effect_intensity, primaryColor: target.color, secondaryColor: target.secondary_color });
     } else {
       await this.getController(lamp.type).setColor(lamp, target.color || '#ffffff');
     }

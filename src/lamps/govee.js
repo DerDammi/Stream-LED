@@ -133,12 +133,16 @@ class GoveeController {
     }
   }
 
-  async setEffect(lamp, effectId) {
-    if (lamp.api_key) return this._cloudSetEffect(lamp, effectId);
-    return this._lanSetEffect(lamp, effectId);
+  async setEffect(lamp, effectId, opts = {}) {
+    if (opts.primaryColor && (String(effectId) === 'static' || String(effectId) === 'color_preset' || String(effectId) === 'gradient' || String(effectId) === 'rgb')) {
+      await this.setColor(lamp, opts.primaryColor);
+      if (String(effectId) === 'static' || String(effectId) === 'color_preset') return true;
+    }
+    if (lamp.api_key) return this._cloudSetEffect(lamp, effectId, opts);
+    return this._lanSetEffect(lamp, effectId, opts);
   }
 
-  async _lanSetEffect(lamp, effectId) {
+  async _lanSetEffect(lamp, effectId, opts = {}) {
     try {
       await this._sendLanCommand(lamp.address, { msg: { cmd: 'pt', data: { type: this._mapLanEffectType(effectId) } } });
       db.updateLampSeen(lamp.id, true);
@@ -149,7 +153,7 @@ class GoveeController {
     }
   }
 
-  async _cloudSetEffect(lamp, effectId) {
+  async _cloudSetEffect(lamp, effectId, opts = {}) {
     try {
       const { default: fetch } = await import('node-fetch');
       const cmd = effectId === 'static' ? { name: 'turn', value: 'on' } : { name: 'scene', value: this._mapCloudScene(effectId) };

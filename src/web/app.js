@@ -20,7 +20,7 @@ const RULE_PRESETS = {
 const byId = (id) => document.getElementById(id);
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const formatTime = (value) => value ? new Date(value).toLocaleString('de-DE') : 'noch nie';
-const effectLabel = (target) => target.mode === 'effect' ? `Effekt ${target.effect_name || '-'}` : `Farbe ${target.color || '#ffffff'}`;
+const effectLabel = (target) => target.mode === 'effect' ? `Effekt ${target.effect_name || '-'} · ${target.color || '#9147ff'}${target.secondary_color ? ` → ${target.secondary_color}` : ''}` : `Farbe ${target.color || '#ffffff'}`;
 const rotationLabel = (target) => `${Math.max(5, Number(target?.rotation_seconds || state.settings?.rotation_seconds || 20))}s`;
 
 window.openModal = (id) => document.getElementById(id).classList.remove('hidden');
@@ -277,7 +277,7 @@ function renderDashboard() {
   byId('lamp-status').innerHTML = state.lamps.map((lamp) => {
     const runtime = state.status?.lamps?.[lamp.id];
     const source = runtime?.state?.source || 'kein aktiver Zustand';
-    const detail = runtime?.state?.mode === 'effect' ? `Effekt ${runtime.state.effect_name || '-'} · Speed ${runtime.state.effect_speed} · Intensität ${runtime.state.effect_intensity}` : runtime?.state?.color ? `Farbe ${runtime.state.color}` : 'wartet auf Szene oder Regel';
+    const detail = runtime?.state?.mode === 'effect' ? `Effekt ${runtime.state.effect_name || '-'} · ${runtime.state.color || '#9147ff'}${runtime.state.secondary_color ? ` → ${runtime.state.secondary_color}` : ''} · Speed ${runtime.state.effect_speed} · Intensität ${runtime.state.effect_intensity}` : runtime?.state?.color ? `Farbe ${runtime.state.color}` : 'wartet auf Szene oder Regel';
     const rotation = runtime?.state?.source?.startsWith('online:') ? ` · Rotation ${rotationLabel(runtime.state)}` : '';
     const diag = runtime?.diagnostics;
     return `<div class="card comfort-card"><div><strong>${escapeHtml(lamp.name)}</strong><div class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${escapeHtml(lamp.address)} · ${lamp.last_seen ? 'online' : 'offline'}</div><div class="meta">Quelle: ${escapeHtml(source)}</div><div class="meta">${escapeHtml(detail)}${escapeHtml(rotation)}</div><div class="meta">Diagnose: letzter Check ${formatTime(diag?.checkedAt)} · ${diag?.error ? escapeHtml(diag.error) : 'ok'}</div></div></div>`;
@@ -474,9 +474,9 @@ function fillRuleTestSelects() {
 function renderTargets(containerId, values = null) {
   const container = byId(containerId);
   if (!state.lamps.length) { container.innerHTML = '<div class="muted">Bitte erst Lampen anlegen.</div>'; return; }
-  const current = values || state.lamps.map((lamp) => ({ lamp_id: lamp.id, enabled: false, mode: 'static', color: '#9147ff', effect_name: '', effect_speed: 128, effect_intensity: 128, rotation_seconds: Number(state.settings?.rotation_seconds || 20) }));
+  const current = values || state.lamps.map((lamp) => ({ lamp_id: lamp.id, enabled: false, mode: 'static', color: '#9147ff', secondary_color: '#ffffff', effect_name: '', effect_speed: 128, effect_intensity: 128, rotation_seconds: Number(state.settings?.rotation_seconds || 20) }));
   container.innerHTML = state.lamps.map((lamp) => {
-    const target = current.find((x) => x.lamp_id === lamp.id) || { lamp_id: lamp.id, enabled: false, mode: 'static', color: '#9147ff', effect_name: '', effect_speed: 128, effect_intensity: 128 };
+    const target = current.find((x) => x.lamp_id === lamp.id) || { lamp_id: lamp.id, enabled: false, mode: 'static', color: '#9147ff', secondary_color: '#ffffff', effect_name: '', effect_speed: 128, effect_intensity: 128 };
     const effects = (lamp.effects || []).map((fx) => { const value = String(fx.id ?? fx.name); return `<option value="${escapeHtml(value)}" ${value === String(target.effect_name || '') ? 'selected' : ''}>${escapeHtml(fx.name ?? fx.id)}</option>`; }).join('');
     const checked = values ? !!values.find((x) => x.lamp_id === lamp.id) : target.enabled !== false;
     return `
@@ -486,7 +486,8 @@ function renderTargets(containerId, values = null) {
           <span class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${(lamp.effects || []).length} Effekte</span>
         </div>
         <label>Modus<select data-field="mode" data-lamp="${lamp.id}"><option value="static" ${target.mode !== 'effect' ? 'selected' : ''}>Farbe</option><option value="effect" ${target.mode === 'effect' ? 'selected' : ''}>Effekt</option></select></label>
-        <label>Farbe<input type="color" data-field="color" data-lamp="${lamp.id}" value="${escapeHtml(target.color || '#9147ff')}"></label>
+        <label>Farbe / Effektfarbe 1<input type="color" data-field="color" data-lamp="${lamp.id}" value="${escapeHtml(target.color || '#9147ff')}"></label>
+        <label>Effektfarbe 2<input type="color" data-field="secondary_color" data-lamp="${lamp.id}" value="${escapeHtml(target.secondary_color || '#ffffff')}"></label>
         <label>Effekt<select data-field="effect_name" data-lamp="${lamp.id}"><option value="">Bitte wählen</option>${effects}</select></label>
         <label>Effekt-Speed<input type="range" min="0" max="255" value="${Number(target.effect_speed || 128)}" data-field="effect_speed" data-lamp="${lamp.id}"></label>
         <label>Effekt-Intensität<input type="range" min="0" max="255" value="${Number(target.effect_intensity || 128)}" data-field="effect_intensity" data-lamp="${lamp.id}"></label>
@@ -507,7 +508,7 @@ window.copyTargetToAll = function(containerId, lampId) {
 };
 window.previewTarget = async function(lampId, containerId) {
   const target = readTarget(containerId, lampId); if (!target) return toast('Bitte Lampe erst aktivieren.', true);
-  if (target.mode === 'effect' && target.effect_name) await api(`/lamps/${lampId}/test`, { method: 'POST', body: JSON.stringify({ action: 'effect', effect_name: target.effect_name, effect_speed: target.effect_speed, effect_intensity: target.effect_intensity }) });
+  if (target.mode === 'effect' && target.effect_name) await api(`/lamps/${lampId}/test`, { method: 'POST', body: JSON.stringify({ action: 'effect', color: target.color, secondary_color: target.secondary_color, effect_name: target.effect_name, effect_speed: target.effect_speed, effect_intensity: target.effect_intensity }) });
   else await api(`/lamps/${lampId}/test`, { method: 'POST', body: JSON.stringify({ action: 'color', color: target.color }) });
   toast('Vorschau an Lampe gesendet.');
 };
@@ -518,6 +519,7 @@ function readTarget(containerId, lampId) {
   return {
     mode: byId(containerId).querySelector(`[data-field="mode"][data-lamp="${lampId}"]`).value,
     color: byId(containerId).querySelector(`[data-field="color"][data-lamp="${lampId}"]`).value,
+    secondary_color: byId(containerId).querySelector(`[data-field="secondary_color"][data-lamp="${lampId}"]`).value,
     effect_name: byId(containerId).querySelector(`[data-field="effect_name"][data-lamp="${lampId}"]`).value,
     effect_speed: Number(byId(containerId).querySelector(`[data-field="effect_speed"][data-lamp="${lampId}"]`).value),
     effect_intensity: Number(byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lampId}"]`).value),
@@ -531,12 +533,14 @@ function bulkSetTargets(containerId, presetTarget) {
     const mode = byId(containerId).querySelector(`[data-field="mode"][data-lamp="${lamp.id}"]`);
     const color = byId(containerId).querySelector(`[data-field="color"][data-lamp="${lamp.id}"]`);
     const effect = byId(containerId).querySelector(`[data-field="effect_name"][data-lamp="${lamp.id}"]`);
+    const secondaryColor = byId(containerId).querySelector(`[data-field="secondary_color"][data-lamp="${lamp.id}"]`);
     const speed = byId(containerId).querySelector(`[data-field="effect_speed"][data-lamp="${lamp.id}"]`);
     const intensity = byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lamp.id}"]`);
     const rotation = byId(containerId).querySelector(`[data-field="rotation_seconds"][data-lamp="${lamp.id}"]`);
     if (enabled) enabled.checked = true;
     if (mode && presetTarget.mode) mode.value = presetTarget.mode;
     if (color && presetTarget.color) color.value = presetTarget.color;
+    if (secondaryColor && presetTarget.secondary_color) secondaryColor.value = presetTarget.secondary_color;
     if (effect && presetTarget.effect_name != null) {
       const existingOption = [...effect.options].find((option) => option.value === presetTarget.effect_name);
       effect.value = existingOption ? presetTarget.effect_name : '';
@@ -563,7 +567,7 @@ function collectTargets(containerId) {
   return state.lamps.map((lamp) => {
     const enabled = byId(containerId).querySelector(`[data-field="enabled"][data-lamp="${lamp.id}"]`)?.checked;
     if (!enabled) return null;
-    return { lamp_id: lamp.id, mode: byId(containerId).querySelector(`[data-field="mode"][data-lamp="${lamp.id}"]`).value, color: byId(containerId).querySelector(`[data-field="color"][data-lamp="${lamp.id}"]`).value, effect_name: byId(containerId).querySelector(`[data-field="effect_name"][data-lamp="${lamp.id}"]`).value, effect_speed: Number(byId(containerId).querySelector(`[data-field="effect_speed"][data-lamp="${lamp.id}"]`).value), effect_intensity: Number(byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lamp.id}"]`).value), rotation_seconds: Number(byId(containerId).querySelector(`[data-field="rotation_seconds"][data-lamp="${lamp.id}"]`)?.value || state.settings?.rotation_seconds || 20) };
+    return { lamp_id: lamp.id, mode: byId(containerId).querySelector(`[data-field="mode"][data-lamp="${lamp.id}"]`).value, color: byId(containerId).querySelector(`[data-field="color"][data-lamp="${lamp.id}"]`).value, secondary_color: byId(containerId).querySelector(`[data-field="secondary_color"][data-lamp="${lamp.id}"]`).value, effect_name: byId(containerId).querySelector(`[data-field="effect_name"][data-lamp="${lamp.id}"]`).value, effect_speed: Number(byId(containerId).querySelector(`[data-field="effect_speed"][data-lamp="${lamp.id}"]`).value), effect_intensity: Number(byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lamp.id}"]`).value), rotation_seconds: Number(byId(containerId).querySelector(`[data-field="rotation_seconds"][data-lamp="${lamp.id}"]`)?.value || state.settings?.rotation_seconds || 20) };
   }).filter(Boolean);
 }
 
