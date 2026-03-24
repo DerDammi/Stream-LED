@@ -1,12 +1,12 @@
 {
   "name": "led-stream-controller",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Web interface to control WLED/Govee/Hue lamps based on Twitch streamers, emotes, and events",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "check": "node --check server.js && node --check src/api/routes.js && node --check src/database.js && node --check src/effect-manager.js && node --check src/lamps/wled.js && node --check src/lamps/govee.js && node --check src/lamps/hue.js"
+    "check": "node --check server.js && node --check src/api/routes.js && node --check src/database.js && node --check src/effect-manager.js && node --check src/twitch.js && node --check src/lamps/wled.js && node --check src/lamps/govee.js && node --check src/lamps/hue.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0",

@@ -141,7 +141,13 @@ function bindForms() {
   byId('chat-rule-form').addEventListener('submit', saveChatRule);
   byId('save-settings-btn').addEventListener('click', saveSettings);
   byId('clear-logs-btn').addEventListener('click', async () => { await api('/logs', { method: 'DELETE' }); toast('Logs geleert.'); await refreshAll(); });
-  byId('reconnect-btn').addEventListener('click', async () => { const data = await api('/auth/twitch/start'); renderOAuthGuidance(data.redirectOptions, 'settings-oauth-guidance'); byId('settings-redirect-uri').textContent = data.redirectUri; window.open(data.url, '_blank', 'width=720,height=820'); });
+  byId('reconnect-btn').addEventListener('click', async () => {
+    const data = await api('/auth/twitch/start');
+    renderOAuthGuidance(data.redirectOptions, 'settings-oauth-guidance');
+    byId('settings-redirect-uri').textContent = data.redirectUri;
+    const popup = window.open(data.url, '_blank', 'width=720,height=820');
+    if (!popup) throw new Error('Popup-Blocker hat das Twitch-Fenster verhindert. Bitte kurz erlauben und erneut klicken.');
+  });
   byId('refresh-now-btn').addEventListener('click', refreshAll);
   byId('run-healthcheck-btn')?.addEventListener('click', runHealthcheckNow);
   byId('discover-lamps-btn')?.addEventListener('click', discoverLampsNow);
@@ -210,9 +216,16 @@ function renderSupportHints() {
 function renderDashboard() {
   const twitch = state.status?.twitch || { onlineStreamers: [] };
   const diagnostics = state.status?.diagnostics || {};
+  const authState = twitch.authState || { state: 'missing', hint: 'Twitch ist aktuell nicht verbunden.', reloginRequired: false };
   const onlineLampCount = state.lamps.filter((lamp) => lamp.last_seen).length;
-  byId('twitch-status').textContent = twitch.connected ? `🟢 ${twitch.auth?.login || 'Verbunden'}` : '🔴 Nicht verbunden';
-  byId('runtime-summary').textContent = twitch.connected ? `${twitch.onlineStreamers.length} live · ${onlineLampCount}/${state.lamps.length} Lampen online` : 'Twitch ist aktuell nicht verbunden.';
+  byId('twitch-status').textContent = twitch.connected
+    ? `🟢 ${twitch.auth?.login || 'Verbunden'}`
+    : authState.reloginRequired
+      ? '🟠 Re-Login nötig'
+      : '🔴 Nicht verbunden';
+  byId('runtime-summary').textContent = twitch.connected
+    ? `${twitch.onlineStreamers.length} live · ${onlineLampCount}/${state.lamps.length} Lampen online`
+    : authState.hint || 'Twitch ist aktuell nicht verbunden.';
   byId('stat-live').textContent = twitch.onlineStreamers.length;
   byId('stat-lamps').textContent = state.lamps.length;
   byId('stat-lamps-online').textContent = onlineLampCount;
@@ -230,9 +243,11 @@ function renderDashboard() {
   ];
   byId('dashboard-checklist').innerHTML = checklist.map((item) => `<div class="status-row"><span>${item.ok ? '✅' : '⬜'}</span><span>${escapeHtml(item.text)}</span></div>`).join('');
   byId('system-health').innerHTML = [
+    `Twitch Auth: ${authState.state === 'ok' ? 'ok' : authState.reloginRequired ? 'Re-Login nötig' : authState.state}`,
     `Twitch Chat: ${twitch.connected ? 'verbunden' : 'nicht verbunden'}`,
     `Überwachte Kanäle: ${diagnostics.twitch?.watchedChannels ?? 0}`,
     `Letzter Live-Check: ${formatTime(diagnostics.twitch?.lastOnlinePollSuccessAt)}`,
+    diagnostics.twitch?.lastAuthRefreshSuccessAt ? `Letzter Token-Refresh: ${formatTime(diagnostics.twitch?.lastAuthRefreshSuccessAt)}` : 'Letzter Token-Refresh: noch keiner',
     `Healthcheck Lampen: ${formatTime(diagnostics.lamps?.lastHealthCheckSuccessAt)}`,
     `Discovery zuletzt: ${formatTime(diagnostics.lamps?.lastDiscoveryAt)}`,
     `Regeln bereit: ${state.status?.ruleReadiness?.onlineRulesReady ?? 0} Online · ${state.status?.ruleReadiness?.chatRulesReady ?? 0} Chat`,
@@ -241,9 +256,12 @@ function renderDashboard() {
 
   byId('live-streamers').innerHTML = twitch.onlineStreamers.length ? twitch.onlineStreamers.map((s) => `<span class="chip live">${escapeHtml(s)}</span>`).join('') : '<span class="muted">Niemand live</span>';
   byId('diagnostics-summary').innerHTML = [
+    `Twitch Status: ${escapeHtml(authState.hint || 'kein Hinweis')}`,
     `Twitch Auth zuletzt geprüft: ${formatTime(diagnostics.twitch?.lastAuthCheckAt)}`,
+    `Letzter Token-Refresh: ${diagnostics.twitch?.lastAuthRefreshAt ? `${formatTime(diagnostics.twitch?.lastAuthRefreshAt)}${diagnostics.twitch?.lastAuthRefreshError ? ` · ${escapeHtml(diagnostics.twitch.lastAuthRefreshError)}` : ''}` : 'noch keiner'}`,
     `Chat zuletzt verbunden: ${formatTime(diagnostics.twitch?.lastChatConnectAt)}`,
     `Letzter Chat-Disconnect: ${diagnostics.twitch?.lastChatDisconnectReason ? `${formatTime(diagnostics.twitch?.lastChatDisconnectAt)} · ${escapeHtml(diagnostics.twitch.lastChatDisconnectReason)}` : 'kein Disconnect bekannt'}`,
+    `Auth-/Reconnect-Backoff bis: ${escapeHtml(authState.blockedUntil || authState.chatReconnectBlockedUntil || 'kein Backoff aktiv')}`,
     `Letzter Twitch-Fehler: ${escapeHtml(diagnostics.twitch?.lastOnlinePollError || diagnostics.twitch?.lastAuthError || 'kein Fehler gespeichert')}`,
     `Letzter Anwendungs-Lauf: ${formatTime(diagnostics.lamps?.lastApplyAt)} · ${escapeHtml(diagnostics.lamps?.lastApplySummary?.dryRun ? 'nur Testmodus' : 'live angewendet')}`
   ].map((row) => `<div class="status-row"><span>•</span><span>${row}</span></div>`).join('');

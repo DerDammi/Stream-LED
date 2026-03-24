@@ -34,6 +34,14 @@ Du kannst damit:
 - HTTP und HTTPS (selbstsigniertes Zertifikat)
 
 
+## Was in V1.5.1 besser ist
+
+- **Twitch Auth langlebiger und produktionstauglicher**: Access-Token werden jetzt mit gespeichertem `refresh_token` automatisch vor bzw. bei Ablauf erneuert
+- erkennt jetzt sauber **widerrufene / kaputte Tokens** und behandelt typische Twitch-Fehler wie `invalid_grant`, 401 oder Chat-Login-Ablehnung als echten Re-Login-Fall
+- **Chat-Reconnect und Online-Polling laufen nicht mehr blind weiter**, wenn die Auth kaputt ist — stattdessen werden sie gestoppt bzw. stark gebremst, damit keine Warn-/Fehlerschleifen entstehen
+- Dashboard und Einstellungen zeigen jetzt **klaren Auth-Status**, Backoff-Zeitfenster und den Hinweis, wenn eine neue Twitch-Anmeldung nötig ist
+- bestehendes Verhalten für Lampen, Online-Regeln und Chat-Regeln bleibt sonst gleich
+
 ## Was in V1.5.0 besser ist
 
 - **Online-Verhalten jetzt pro Lampe statt global**: wenn mehrere zugewiesene Streamer gleichzeitig live sind, rotiert jede Lampe unabhängig nur zwischen ihren eigenen Live-Zuweisungen
@@ -152,9 +160,17 @@ docker push derdammi/stream-led:latest
 ### Optional mit Version-Tag
 
 ```bash
-docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.5.0 .
+docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.5.1 .
 docker push derdammi/stream-led:latest
-docker push derdammi/stream-led:1.5.0
+docker push derdammi/stream-led:1.5.1
+```
+
+Wenn du nach diesem Update sauber versionieren willst, ist der typische Release-Flow also:
+
+```bash
+docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.5.1 .
+docker push derdammi/stream-led:latest
+docker push derdammi/stream-led:1.5.1
 ```
 
 ### Wichtige Hinweise

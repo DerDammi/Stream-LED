@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Twitch Lamp Controller V1.4.2</title>
+  <title>Twitch Lamp Controller V1.5.1</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
 
   <div id="setup-screen" class="screen hidden">
     <div class="setup-card">
-      <div class="badge">V1.4.2 · Docker-first</div>
+      <div class="badge">V1.5.1 · Docker-first</div>
       <h1>Twitch Lamp Controller</h1>
       <p class="subtitle">Noob-freundliches Setup für WLED, Govee, Philips Hue, Online-Szenen und chatgesteuerte Lampenregeln.</p>
       <div id="lamp-type-overview" class="support-row"></div>
@@ -45,7 +45,7 @@
     <aside class="sidebar">
       <div>
         <div class="logo">💡 Twitch Lamp</div>
-        <div class="badge small">V1.5.0</div>
+        <div class="badge small">V1.5.1</div>
       </div>
       <nav>
         <a href="#" class="nav-link active" data-tab="dashboard">Dashboard</a>
@@ -125,7 +125,7 @@
         <div class="panel-grid two">
           <div class="panel">
             <h3>Twitch</h3>
-            <p class="help">Falls du Token oder App-Daten geändert hast, starte die Verbindung hier neu.</p>
+            <p class="help">Die App speichert Access- und Refresh-Token und erneuert Access-Tokens automatisch vor bzw. bei Ablauf. Wenn Twitch den Refresh ablehnt oder Tokens widerrufen wurden, stoppt die App Chat-Reconnects und Live-Polls mit Backoff und zeigt hier klar an, dass ein Re-Login nötig ist.</p>
             <div class="actions-row"><button class="btn btn-secondary" id="reconnect-btn">Twitch neu verbinden</button></div>
           </div>
           <div class="panel">

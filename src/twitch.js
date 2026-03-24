@@ -2,16 +2,23 @@ const crypto = require('crypto');
 const tmi = require('tmi.js');
 const db = require('./database');
 
+const DEFAULT_AUTH_STATE = 'missing';
+const AUTH_REFRESH_SKEW_MS = 5 * 60 * 1000;
+const INVALID_AUTH_RETRY_MS = 15 * 60 * 1000;
+const CHAT_INVALID_AUTH_BACKOFF_MS = 30 * 60 * 1000;
+
 class TwitchIntegration {
   constructor(effectManager) {
     this.effectManager = effectManager;
     this.auth = null;
     this.chatClient = null;
     this.onlineStreamers = new Set();
-    this.chatWindows = new Map(); // ruleId -> timestamps[]
+    this.chatWindows = new Map();
     this.lastFingerprint = '';
     this.oauthStates = new Map();
     this.onlineRotationStartedAt = Date.now();
+    this.chatReconnectBlockedUntil = 0;
+    this.authFailureBlockedUntil = 0;
     this.diagnostics = {
       initializedAt: null,
       lastInitSuccessAt: null,
@@ -23,7 +30,16 @@ class TwitchIntegration {
       lastChatDisconnectAt: null,
       lastChatDisconnectReason: null,
       lastAuthCheckAt: null,
-      lastAuthError: null
+      lastAuthError: null,
+      lastAuthRefreshAt: null,
+      lastAuthRefreshSuccessAt: null,
+      lastAuthRefreshError: null,
+      authStateChangedAt: null,
+      authState: DEFAULT_AUTH_STATE,
+      authHint: 'Twitch ist noch nicht verbunden.',
+      reloginRequired: false,
+      authBlockedUntil: null,
+      chatReconnectBlockedUntil: null
     };
   }
 
@@ -31,26 +47,27 @@ class TwitchIntegration {
     this.diagnostics.initializedAt = new Date().toISOString();
     this.auth = db.getTwitchAuth();
     if (!this.auth?.access_token || !this.auth?.client_id) {
-      db.log('INFO', 'twitch', 'Noch nicht mit Twitch verbunden');
-      this.diagnostics.lastInitError = 'Noch nicht mit Twitch verbunden';
+      const hasClientConfig = !!(this.auth?.client_id && this.auth?.client_secret);
+      this.setAuthState('missing', hasClientConfig ? 'Twitch Login fehlt oder ist ungültig. Bitte im Webinterface neu verbinden.' : 'Noch nicht mit Twitch verbunden.', { reloginRequired: hasClientConfig || !this.auth?.client_id || !this.auth?.access_token });
+      return false;
+    }
+
+    const authReady = await this.ensureValidAuth({ reason: 'initialize', allowInvalidBlockBypass: true });
+    if (!authReady) {
+      this.diagnostics.lastInitError = this.diagnostics.authHint;
       return false;
     }
 
     const user = await this.fetchCurrentUser();
     if (!user) {
-      const message = 'Twitch Token ungültig oder abgelaufen';
-      db.log('WARN', 'twitch', message);
-      this.diagnostics.lastAuthCheckAt = new Date().toISOString();
-      this.diagnostics.lastAuthError = message;
-      this.diagnostics.lastInitError = message;
+      this.handleAuthFailure('Twitch Token ungültig oder abgelaufen.', { reloginRequired: true, code: 'invalid_token' });
+      this.diagnostics.lastInitError = this.diagnostics.authHint;
       return false;
     }
 
-    this.auth.login = user.login;
-    this.auth.user_id = user.id;
+    this.auth = { ...(db.getTwitchAuth() || {}), login: user.login, user_id: user.id };
     db.saveTwitchAuth(this.auth);
-    this.diagnostics.lastAuthCheckAt = new Date().toISOString();
-    this.diagnostics.lastAuthError = null;
+    this.setAuthState('ok', `Verbunden als ${user.login}.`, { reloginRequired: false, clearBlocks: true });
     await this.connectChat();
     this.resetOnlineRotationClock();
     this.diagnostics.lastInitSuccessAt = new Date().toISOString();
@@ -190,8 +207,11 @@ class TwitchIntegration {
         redirect_uri: redirectUri || this.getRedirectUri()
       })
     });
-    if (!resp.ok) throw new Error(`OAuth fehlgeschlagen (${resp.status})`);
-    const tokenData = await resp.json();
+    const tokenData = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const details = tokenData?.message || tokenData?.error_description || `OAuth fehlgeschlagen (${resp.status})`;
+      throw new Error(details);
+    }
     const merged = {
       ...auth,
       access_token: tokenData.access_token,
@@ -200,26 +220,173 @@ class TwitchIntegration {
     };
     db.saveTwitchAuth(merged);
     this.auth = db.getTwitchAuth();
+    this.setAuthState('ok', 'Twitch OAuth erfolgreich erneuert.', { reloginRequired: false, clearBlocks: true });
     await this.initialize();
     return this.auth;
   }
 
+  parseExpiresAt(value) {
+    if (!value) return null;
+    const ts = new Date(value).getTime();
+    return Number.isFinite(ts) ? ts : null;
+  }
+
+  isAccessTokenExpiringSoon(auth = null) {
+    const expiresAt = this.parseExpiresAt(auth?.expires_at);
+    if (!expiresAt) return false;
+    return expiresAt - Date.now() <= AUTH_REFRESH_SKEW_MS;
+  }
+
+  setAuthState(state, hint, options = {}) {
+    const nowIso = new Date().toISOString();
+    const changed = this.diagnostics.authState !== state || this.diagnostics.authHint !== hint || this.diagnostics.reloginRequired !== !!options.reloginRequired;
+    this.diagnostics.authState = state;
+    this.diagnostics.authHint = hint;
+    this.diagnostics.reloginRequired = !!options.reloginRequired;
+    this.diagnostics.lastAuthCheckAt = nowIso;
+    this.diagnostics.lastAuthError = state === 'ok' ? null : hint;
+    this.diagnostics.authBlockedUntil = this.authFailureBlockedUntil ? new Date(this.authFailureBlockedUntil).toISOString() : null;
+    this.diagnostics.chatReconnectBlockedUntil = this.chatReconnectBlockedUntil ? new Date(this.chatReconnectBlockedUntil).toISOString() : null;
+    if (changed) this.diagnostics.authStateChangedAt = nowIso;
+    if (options.clearBlocks) {
+      this.authFailureBlockedUntil = 0;
+      this.chatReconnectBlockedUntil = 0;
+      this.diagnostics.authBlockedUntil = null;
+      this.diagnostics.chatReconnectBlockedUntil = null;
+    }
+  }
+
+  async disconnectChat(reason = 'disconnect') {
+    if (!this.chatClient) return;
+    try { await this.chatClient.disconnect(); } catch {}
+    this.chatClient = null;
+    this.lastFingerprint = '';
+    this.diagnostics.lastChatDisconnectAt = new Date().toISOString();
+    this.diagnostics.lastChatDisconnectReason = reason;
+  }
+
+  handleAuthFailure(message, options = {}) {
+    const reason = options.code || 'auth_invalid';
+    const reloginRequired = options.reloginRequired !== false;
+    this.authFailureBlockedUntil = Date.now() + INVALID_AUTH_RETRY_MS;
+    this.chatReconnectBlockedUntil = Date.now() + CHAT_INVALID_AUTH_BACKOFF_MS;
+    this.onlineStreamers.clear();
+    this.disconnectChat(`auth:${reason}`).catch(() => {});
+    if (reloginRequired) {
+      const saved = db.getTwitchAuth() || {};
+      db.saveTwitchAuth({ ...saved, access_token: null, refresh_token: options.keepRefreshToken ? saved.refresh_token || null : null, login: saved.login || null, user_id: saved.user_id || null, expires_at: null });
+      this.auth = db.getTwitchAuth();
+    }
+    this.setAuthState('reauth_required', message, { reloginRequired });
+    db.log('WARN', 'twitch-auth', message);
+  }
+
+  async refreshAccessToken(auth = null) {
+    const current = auth || db.getTwitchAuth();
+    this.diagnostics.lastAuthRefreshAt = new Date().toISOString();
+    if (!current?.client_id || !current?.client_secret || !current?.refresh_token) {
+      this.handleAuthFailure('Twitch Login muss erneut verbunden werden: Refresh-Token fehlt.', { reloginRequired: true, code: 'refresh_missing' });
+      return false;
+    }
+    const { default: fetch } = await import('node-fetch');
+    const resp = await fetch('https://id.twitch.tv/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: current.refresh_token,
+        client_id: current.client_id,
+        client_secret: current.client_secret
+      })
+    });
+    const tokenData = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const errorCode = String(tokenData?.error || '').toLowerCase();
+      const description = tokenData?.message || tokenData?.error_description || `Token-Refresh fehlgeschlagen (${resp.status})`;
+      this.diagnostics.lastAuthRefreshError = description;
+      if (
+        resp.status === 400
+        || resp.status === 401
+        || /invalid_grant|revoked|invalid refresh|invalid client secret|client secret/i.test(description)
+        || /invalid request|bad request|unauthorized/i.test(errorCode)
+      ) {
+        this.handleAuthFailure(`Twitch Login/App-Daten wurden von Twitch abgelehnt: ${description}. Bitte im Webinterface neu verbinden und ggf. Client Secret prüfen.`, { reloginRequired: true, code: 'invalid_grant' });
+        return false;
+      }
+      db.log('WARN', 'twitch-auth', description);
+      return false;
+    }
+    const merged = {
+      ...current,
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token || current.refresh_token,
+      expires_at: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString() : current.expires_at || null
+    };
+    db.saveTwitchAuth(merged);
+    this.auth = db.getTwitchAuth();
+    this.diagnostics.lastAuthRefreshSuccessAt = new Date().toISOString();
+    this.diagnostics.lastAuthRefreshError = null;
+    this.setAuthState('ok', `Verbunden als ${this.auth?.login || 'Twitch User'}.`, { reloginRequired: false, clearBlocks: true });
+    db.log('INFO', 'twitch-auth', 'Twitch Access-Token erfolgreich erneuert.');
+    return true;
+  }
+
+  async ensureValidAuth(options = {}) {
+    const auth = db.getTwitchAuth();
+    this.auth = auth;
+    if (!auth?.access_token || !auth?.client_id) {
+      const hasClientConfig = !!(auth?.client_id && auth?.client_secret);
+      this.setAuthState('missing', hasClientConfig ? 'Twitch Login fehlt oder ist ungültig. Bitte neu verbinden.' : 'Twitch ist noch nicht verbunden.', { reloginRequired: hasClientConfig || !auth?.refresh_token });
+      return false;
+    }
+    if (!options.allowInvalidBlockBypass && this.authFailureBlockedUntil && Date.now() < this.authFailureBlockedUntil && this.diagnostics.reloginRequired) {
+      this.setAuthState('reauth_required', this.diagnostics.authHint || 'Twitch Login muss neu verbunden werden.', { reloginRequired: true });
+      return false;
+    }
+    if (this.isAccessTokenExpiringSoon(auth)) {
+      const refreshed = await this.refreshAccessToken(auth);
+      if (!refreshed) return false;
+    }
+    return !!(this.auth?.access_token || db.getTwitchAuth()?.access_token);
+  }
+
   async fetchCurrentUser() {
-    const data = await this.helixGet('/users');
+    const data = await this.helixGet('/users', { allowRefreshOnUnauthorized: true });
     return data?.data?.[0] || null;
   }
 
-  async helixGet(endpoint) {
+  async helixGet(endpoint, options = {}) {
+    const authReady = await this.ensureValidAuth();
+    if (!authReady) return null;
     const auth = db.getTwitchAuth();
     if (!auth?.access_token || !auth?.client_id) return null;
     const { default: fetch } = await import('node-fetch');
-    const resp = await fetch(`https://api.twitch.tv/helix${endpoint}`, {
+
+    const requestOnce = async (token) => fetch(`https://api.twitch.tv/helix${endpoint}`, {
       headers: {
         'Client-ID': auth.client_id,
-        'Authorization': `Bearer ${auth.access_token}`
+        'Authorization': `Bearer ${token}`
       }
     });
-    if (!resp.ok) return null;
+
+    let resp = await requestOnce(auth.access_token);
+    if (resp.status === 401 && options.allowRefreshOnUnauthorized !== false) {
+      const refreshed = await this.refreshAccessToken(auth);
+      if (!refreshed) return null;
+      const latest = db.getTwitchAuth();
+      resp = await requestOnce(latest?.access_token);
+    }
+
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      const message = body?.message || `Twitch API Fehler (${resp.status})`;
+      if (resp.status === 401) {
+        this.handleAuthFailure('Twitch Auth wurde abgelehnt. Bitte im Webinterface neu verbinden.', { reloginRequired: true, code: 'unauthorized' });
+      } else {
+        this.diagnostics.lastOnlinePollError = message;
+      }
+      return null;
+    }
     return resp.json();
   }
 
@@ -233,20 +400,29 @@ class TwitchIntegration {
     const fingerprint = JSON.stringify({ login: auth?.login, token: auth?.access_token, channels });
     if (fingerprint === this.lastFingerprint && this.chatClient) return;
 
+    if (this.chatReconnectBlockedUntil && Date.now() < this.chatReconnectBlockedUntil) {
+      this.diagnostics.chatReconnectBlockedUntil = new Date(this.chatReconnectBlockedUntil).toISOString();
+      return;
+    }
+
     if (this.chatClient) {
       try { await this.chatClient.disconnect(); } catch {}
       this.chatClient = null;
     }
 
-    if (!auth?.login || !auth?.access_token || channels.length === 0) return;
+    const authReady = await this.ensureValidAuth();
+    if (!authReady) return;
+
+    const latestAuth = db.getTwitchAuth();
+    if (!latestAuth?.login || !latestAuth?.access_token || channels.length === 0) return;
 
     this.chatClient = new tmi.Client({
       identity: {
-        username: auth.login,
-        password: auth.access_token.startsWith('oauth:') ? auth.access_token : `oauth:${auth.access_token}`
+        username: latestAuth.login,
+        password: latestAuth.access_token.startsWith('oauth:') ? latestAuth.access_token : `oauth:${latestAuth.access_token}`
       },
       channels,
-      connection: { reconnect: true, secure: true }
+      connection: { reconnect: false, secure: true }
     });
 
     this.chatClient.on('message', (channel, tags, message, self) => {
@@ -255,16 +431,40 @@ class TwitchIntegration {
     this.chatClient.on('connected', () => {
       this.diagnostics.lastChatConnectAt = new Date().toISOString();
       this.diagnostics.lastChatDisconnectReason = null;
+      this.chatReconnectBlockedUntil = 0;
+      this.diagnostics.chatReconnectBlockedUntil = null;
       db.log('INFO', 'twitch-chat', `Verbunden mit ${channels.length} Kanal/Kanälen`);
     });
     this.chatClient.on('disconnected', (reason) => {
+      const text = String(reason || 'unbekannt');
       this.diagnostics.lastChatDisconnectAt = new Date().toISOString();
-      this.diagnostics.lastChatDisconnectReason = reason || 'unbekannt';
-      db.log('WARN', 'twitch-chat', `Getrennt: ${reason}`);
+      this.diagnostics.lastChatDisconnectReason = text;
+      this.chatClient = null;
+      this.lastFingerprint = '';
+      if (/login authentication failed|improperly formatted auth|invalid nick/i.test(text)) {
+        this.handleAuthFailure('Twitch Chat Login wurde abgelehnt. Bitte Twitch im Webinterface neu verbinden.', { reloginRequired: true, code: 'chat_auth' });
+        return;
+      }
+      this.chatReconnectBlockedUntil = Date.now() + 60 * 1000;
+      this.diagnostics.chatReconnectBlockedUntil = new Date(this.chatReconnectBlockedUntil).toISOString();
+      db.log('WARN', 'twitch-chat', `Getrennt: ${text}`);
     });
 
-    await this.chatClient.connect();
-    this.lastFingerprint = fingerprint;
+    try {
+      await this.chatClient.connect();
+      this.lastFingerprint = fingerprint;
+    } catch (error) {
+      this.chatClient = null;
+      this.lastFingerprint = '';
+      const message = String(error?.message || error || 'Twitch Chat Verbindung fehlgeschlagen');
+      if (/Login authentication failed|invalid/i.test(message)) {
+        this.handleAuthFailure('Twitch Chat Login wurde abgelehnt. Bitte Twitch im Webinterface neu verbinden.', { reloginRequired: true, code: 'chat_auth' });
+        return;
+      }
+      this.chatReconnectBlockedUntil = Date.now() + 60 * 1000;
+      this.diagnostics.chatReconnectBlockedUntil = new Date(this.chatReconnectBlockedUntil).toISOString();
+      db.log('WARN', 'twitch-chat', message);
+    }
   }
 
   async refreshChannels() {
@@ -322,10 +522,17 @@ class TwitchIntegration {
       this.diagnostics.lastOnlinePollError = null;
       return [];
     }
+    const authReady = await this.ensureValidAuth();
+    if (!authReady) {
+      this.onlineStreamers.clear();
+      const message = this.diagnostics.authHint || 'Twitch Auth ungültig.';
+      this.diagnostics.lastOnlinePollError = message;
+      throw new Error(message);
+    }
     const query = channels.map((login) => `user_login=${encodeURIComponent(login)}`).join('&');
     const data = await this.helixGet(`/streams?${query}`);
     if (!data) {
-      const message = 'Live-Status konnte nicht von Twitch geladen werden';
+      const message = this.diagnostics.authHint || 'Live-Status konnte nicht von Twitch geladen werden';
       this.diagnostics.lastOnlinePollError = message;
       throw new Error(message);
     }
@@ -355,6 +562,13 @@ class TwitchIntegration {
   }
 
   async tick() {
+    if (this.authFailureBlockedUntil && Date.now() >= this.authFailureBlockedUntil && this.diagnostics.reloginRequired) {
+      this.authFailureBlockedUntil = Date.now() + INVALID_AUTH_RETRY_MS;
+      this.diagnostics.authBlockedUntil = new Date(this.authFailureBlockedUntil).toISOString();
+    }
+    if (!this.diagnostics.reloginRequired && (!this.chatClient || this.lastFingerprint === '')) {
+      await this.connectChat().catch(() => {});
+    }
     const chatRule = this.getActiveChatRule();
     const onlineState = this.getOnlineState();
     await this.effectManager.applyResolvedState({ onlineState, chatRule });
@@ -364,9 +578,17 @@ class TwitchIntegration {
   getStatus() {
     const activeChatRule = this.getActiveChatRule();
     const activeOnlineRules = this.getActiveOnlineRules();
+    const auth = this.auth || db.getTwitchAuth();
     return {
       connected: !!this.chatClient,
-      auth: this.auth ? { login: this.auth.login, expires_at: this.auth.expires_at || null } : null,
+      auth: auth ? { login: auth.login, expires_at: auth.expires_at || null } : null,
+      authState: {
+        state: this.diagnostics.authState,
+        hint: this.diagnostics.authHint,
+        reloginRequired: this.diagnostics.reloginRequired,
+        blockedUntil: this.diagnostics.authBlockedUntil,
+        chatReconnectBlockedUntil: this.diagnostics.chatReconnectBlockedUntil
+      },
       onlineStreamers: [...this.onlineStreamers],
       activeChatRule: activeChatRule ? {
         id: activeChatRule.id,
