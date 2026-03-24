@@ -479,26 +479,55 @@ function renderTargets(containerId, values = null) {
     const target = current.find((x) => x.lamp_id === lamp.id) || { lamp_id: lamp.id, enabled: false, mode: 'static', color: '#9147ff', secondary_color: '#ffffff', effect_name: '', effect_speed: 128, effect_intensity: 128 };
     const effects = (lamp.effects || []).map((fx) => { const value = String(fx.id ?? fx.name); return `<option value="${escapeHtml(value)}" ${value === String(target.effect_name || '') ? 'selected' : ''}>${escapeHtml(fx.name ?? fx.id)}</option>`; }).join('');
     const checked = values ? !!values.find((x) => x.lamp_id === lamp.id) : target.enabled !== false;
+    const isEffectMode = target.mode === 'effect';
     return `
       <div class="target-card" data-target-card="${lamp.id}">
-        <div class="target-top">
-          <label class="inline"><input type="checkbox" data-field="enabled" data-lamp="${lamp.id}" ${checked ? 'checked' : ''}> ${escapeHtml(lamp.name)} dieser Regel zuweisen</label>
-          <span class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${(lamp.effects || []).length} Effekte</span>
+        <div class="target-head">
+          <div class="target-title-wrap">
+            <label class="inline target-toggle"><input type="checkbox" data-field="enabled" data-lamp="${lamp.id}" ${checked ? 'checked' : ''}> <span>${escapeHtml(lamp.name)}</span></label>
+            <span class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${(lamp.effects || []).length} Effekte</span>
+          </div>
+          <div class="target-actions target-actions-top">
+            <button type="button" class="btn btn-ghost" onclick="copyTargetToAll('${containerId}','${lamp.id}')">Auf alle kopieren</button>
+            <button type="button" class="btn btn-ghost" onclick="previewTarget('${lamp.id}','${containerId}')">Jetzt testen</button>
+          </div>
         </div>
-        <label>Modus<select data-field="mode" data-lamp="${lamp.id}"><option value="static" ${target.mode !== 'effect' ? 'selected' : ''}>Farbe</option><option value="effect" ${target.mode === 'effect' ? 'selected' : ''}>Effekt</option></select></label>
-        <label>Farbe / Effektfarbe 1<input type="color" data-field="color" data-lamp="${lamp.id}" value="${escapeHtml(target.color || '#9147ff')}"></label>
-        <label>Effektfarbe 2<input type="color" data-field="secondary_color" data-lamp="${lamp.id}" value="${escapeHtml(target.secondary_color || '#ffffff')}"></label>
-        <label>Effekt<select data-field="effect_name" data-lamp="${lamp.id}"><option value="">Bitte wählen</option>${effects}</select></label>
-        <label>Effekt-Speed<input type="range" min="0" max="255" value="${Number(target.effect_speed || 128)}" data-field="effect_speed" data-lamp="${lamp.id}"></label>
-        <label>Effekt-Intensität<input type="range" min="0" max="255" value="${Number(target.effect_intensity || 128)}" data-field="effect_intensity" data-lamp="${lamp.id}"></label>
-        <label>Rotation pro Lampe (Sek.)<input type="number" min="5" max="600" value="${Math.max(5, Number(target.rotation_seconds || state.settings?.rotation_seconds || 20))}" data-field="rotation_seconds" data-lamp="${lamp.id}"></label>
-        <div class="target-actions">
-          <button type="button" class="btn btn-ghost" onclick="copyTargetToAll('${containerId}','${lamp.id}')">Auf alle kopieren</button>
-          <button type="button" class="btn btn-ghost" onclick="previewTarget('${lamp.id}','${containerId}')">Jetzt testen</button>
+        <div class="target-grid">
+          <label class="target-mode">Modus<select data-field="mode" data-lamp="${lamp.id}"><option value="static" ${!isEffectMode ? 'selected' : ''}>Farbe</option><option value="effect" ${isEffectMode ? 'selected' : ''}>Effekt</option></select></label>
+          <div class="target-colors">
+            <label>Primärfarbe<input type="color" data-field="color" data-lamp="${lamp.id}" value="${escapeHtml(target.color || '#9147ff')}"></label>
+            <label class="effect-only ${isEffectMode ? '' : 'muted-control'}">Sekundärfarbe<input type="color" data-field="secondary_color" data-lamp="${lamp.id}" value="${escapeHtml(target.secondary_color || '#ffffff')}"></label>
+          </div>
+          <label class="effect-only ${isEffectMode ? '' : 'muted-control'}">Effekt<select data-field="effect_name" data-lamp="${lamp.id}"><option value="">Bitte wählen</option>${effects}</select></label>
+          <div class="target-range-row effect-only ${isEffectMode ? '' : 'muted-control'}">
+            <label>Speed<input type="range" min="0" max="255" value="${Number(target.effect_speed || 128)}" data-field="effect_speed" data-lamp="${lamp.id}"></label>
+            <label>Intensität<input type="range" min="0" max="255" value="${Number(target.effect_intensity || 128)}" data-field="effect_intensity" data-lamp="${lamp.id}"></label>
+          </div>
+          <label class="target-rotation">Rotation pro Lampe (Sek.)<input type="number" min="5" max="600" value="${Math.max(5, Number(target.rotation_seconds || state.settings?.rotation_seconds || 20))}" data-field="rotation_seconds" data-lamp="${lamp.id}"></label>
         </div>
       </div>`;
   }).join('');
-  container.querySelectorAll('input,select').forEach((el) => el.addEventListener('input', () => updateTargetSummary(containerId, containerId === 'online-rule-targets' ? 'online-target-summary' : 'chat-target-summary')));
+  container.querySelectorAll('input,select').forEach((el) => el.addEventListener('input', () => {
+    if (el.dataset.field === 'mode' || el.dataset.field === 'enabled') syncTargetCardState(el.closest('[data-target-card]'));
+    updateTargetSummary(containerId, containerId === 'online-rule-targets' ? 'online-target-summary' : 'chat-target-summary');
+  }));
+  container.querySelectorAll('[data-target-card]').forEach(syncTargetCardState);
+}
+
+function syncTargetCardState(card) {
+  if (!card) return;
+  const lampId = card.dataset.targetCard;
+  const enabled = card.querySelector(`[data-field="enabled"][data-lamp="${lampId}"]`)?.checked;
+  const mode = card.querySelector(`[data-field="mode"][data-lamp="${lampId}"]`)?.value;
+  card.classList.toggle('target-card-disabled', !enabled);
+  card.querySelectorAll('.effect-only').forEach((el) => {
+    el.classList.toggle('muted-control', mode !== 'effect');
+    el.querySelectorAll('input,select').forEach((input) => { input.disabled = !enabled || mode !== 'effect'; });
+  });
+  card.querySelectorAll('input,select,button').forEach((input) => {
+    if (input.dataset.field === 'enabled') return;
+    if (!input.closest('.effect-only')) input.disabled = !enabled;
+  });
 }
 
 window.copyTargetToAll = function(containerId, lampId) {
