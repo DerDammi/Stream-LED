@@ -13,22 +13,30 @@ function hexToRgb(hex, fallback = [255, 255, 255]) {
 }
 
 function buildSegments(lamp, opts = {}, mode = 'static') {
-  const segmentIds = opts.segment_mode === 'selected' && Array.isArray(opts.segment_ids) && opts.segment_ids.length
-    ? [...new Set(opts.segment_ids.map((value) => Math.max(0, Math.round(Number(value)))).filter((value) => Number.isFinite(value)))].sort((a, b) => a - b)
+  const segmentCount = Math.max(1, Number(lamp?.metadata?.segment_count || opts.segment_count || 1));
+  const allSegmentIds = Array.from({ length: segmentCount }, (_, index) => index);
+  const selectedMode = opts.segment_mode === 'selected';
+  const segmentIds = selectedMode && Array.isArray(opts.segment_ids) && opts.segment_ids.length
+    ? [...new Set(opts.segment_ids.map((value) => Math.max(0, Math.round(Number(value)))).filter((value) => Number.isFinite(value) && value < segmentCount))].sort((a, b) => a - b)
     : [];
-  if (!segmentIds.length) {
+  const colorMap = new Map((Array.isArray(opts.segment_colors) ? opts.segment_colors : []).map((entry) => [Math.max(0, Math.round(Number(entry?.segment_id))), entry?.color]));
+
+  if (!selectedMode || !segmentIds.length) {
     if (mode === 'effect') {
       const primary = hexToRgb(opts.primaryColor || opts.color || '#9147ff', [145, 71, 255]);
       return [{ col: [primary], fx: Number.isFinite(Number(opts.effectId)) ? Number(opts.effectId) : opts.effectId, sx: opts.speed ?? 128, ix: opts.intensity ?? 128 }];
     }
     return [{ col: [[...hexToRgb(opts.color || '#ffffff')]], fx: 0 }];
   }
-  const colorMap = new Map((Array.isArray(opts.segment_colors) ? opts.segment_colors : []).map((entry) => [Math.max(0, Math.round(Number(entry?.segment_id))), entry?.color]));
-  return segmentIds.map((segmentId) => {
-    const primary = hexToRgb(colorMap.get(segmentId) || opts.primaryColor || opts.color || '#9147ff', [145, 71, 255]);
+
+  return allSegmentIds.map((segmentId) => {
+    const isSelected = segmentIds.includes(segmentId);
+    const primary = isSelected
+      ? hexToRgb(colorMap.get(segmentId) || '#9147ff', [145, 71, 255])
+      : [0, 0, 0];
     return mode === 'effect'
-      ? { id: segmentId, col: [primary], fx: Number.isFinite(Number(opts.effectId)) ? Number(opts.effectId) : opts.effectId, sx: opts.speed ?? 128, ix: opts.intensity ?? 128 }
-      : { id: segmentId, col: [[...primary]], fx: 0 };
+      ? { id: segmentId, on: isSelected, col: [primary], fx: Number.isFinite(Number(opts.effectId)) ? Number(opts.effectId) : opts.effectId, sx: opts.speed ?? 128, ix: opts.intensity ?? 128 }
+      : { id: segmentId, on: isSelected, col: [[...primary]], fx: 0 };
   });
 }
 

@@ -21,7 +21,14 @@ const byId = (id) => document.getElementById(id);
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const formatTime = (value) => value ? new Date(value).toLocaleString('de-DE') : 'noch nie';
 const formatSegments = (target) => target.segment_mode === 'selected' && Array.isArray(target.segment_ids) && target.segment_ids.length ? ` · Segmente ${target.segment_ids.join(', ')}` : '';
-const effectLabel = (target) => target.mode === 'effect' ? `Effekt ${target.effect_name || '-'} · ${target.color || '#9147ff'}${formatSegments(target)}` : `Farbe ${target.color || '#ffffff'}${formatSegments(target)}`;
+function formatSegmentColorSummary(target) {
+  if (!(target.segment_mode === 'selected' && Array.isArray(target.segment_ids) && target.segment_ids.length)) return '';
+  const colorMap = new Map((Array.isArray(target.segment_colors) ? target.segment_colors : []).map((entry) => [Number(entry.segment_id), entry.color]));
+  return ` · Segmentfarben ${target.segment_ids.map((segmentId) => `S${segmentId}:${colorMap.get(segmentId) || '#9147ff'}`).join(', ')}`;
+}
+const effectLabel = (target) => target.mode === 'effect'
+  ? `Effekt ${target.effect_name || '-'}${target.segment_mode === 'selected' ? formatSegmentColorSummary(target) : ` · ${target.color || '#9147ff'}`}${formatSegments(target)}`
+  : `${target.segment_mode === 'selected' ? 'Segmentfarben' : 'Farbe'} ${target.segment_mode === 'selected' ? target.segment_ids.map((segmentId) => `S${segmentId}`).join(', ') : (target.color || '#ffffff')}${target.segment_mode === 'selected' ? formatSegmentColorSummary(target) : ''}${formatSegments(target)}`;
 const rotationLabel = (target) => `${Math.max(5, Number(target?.rotation_seconds || state.settings?.rotation_seconds || 20))}s`;
 
 window.openModal = (id) => document.getElementById(id).classList.remove('hidden');
@@ -486,15 +493,32 @@ function renderSegmentColorInputs(lamp, target) {
     : [];
   const colorMap = new Map((Array.isArray(target.segment_colors) ? target.segment_colors : []).map((entry) => [Number(entry.segment_id), entry.color]));
   return `
-    <div class="segment-box wled-only">
-      <label>WLED Segmente<select data-field="segment_mode" data-lamp="${lamp.id}"><option value="all" ${target.segment_mode !== 'selected' ? 'selected' : ''}>Alle Segmente gleich</option><option value="selected" ${target.segment_mode === 'selected' ? 'selected' : ''}>Einzelne Segmente</option></select></label>
+    <div class="segment-box wled-only ${target.segment_mode === 'selected' ? 'segment-box-active' : ''}">
+      <label>WLED Segmente<select data-field="segment_mode" data-lamp="${lamp.id}"><option value="all" ${target.segment_mode !== 'selected' ? 'selected' : ''}>Alle Segmente gleich</option><option value="selected" ${target.segment_mode === 'selected' ? 'selected' : ''}>Einzelne Segmente mit eigenen Farben</option></select></label>
       <div class="segment-picker ${target.segment_mode === 'selected' ? '' : 'hidden'}" data-segment-picker="${lamp.id}">
-        <div class="segment-checks">${Array.from({ length: segmentCount }, (_, segmentId) => `<label class="inline"><input type="checkbox" data-field="segment_ids" data-lamp="${lamp.id}" value="${segmentId}" ${selectedSegments.includes(segmentId) ? 'checked' : ''}> Segment ${segmentId}</label>`).join('')}</div>
-        <div class="segment-colors" data-segment-colors="${lamp.id}">${selectedSegments.map((segmentId) => `<label>Segment ${segmentId}<input type="color" data-field="segment_color_${segmentId}" data-lamp="${lamp.id}" value="${escapeHtml(colorMap.get(segmentId) || target.color || '#9147ff')}"></label>`).join('')}</div>
-        <div class="meta">Nur WLED bekommt Segment-Auswahl. Hue und Govee bleiben bewusst lampenweit.</div>
+        <div class="segment-note"><strong>Segmentmodus aktiv:</strong> Die normale Hauptfarbe wird ignoriert. Nur die Segmentfarben werden an WLED gesendet.</div>
+        <div class="segment-checks">${Array.from({ length: segmentCount }, (_, segmentId) => `<label class="inline segment-check"><input type="checkbox" data-field="segment_ids" data-lamp="${lamp.id}" value="${segmentId}" ${selectedSegments.includes(segmentId) ? 'checked' : ''}> Segment ${segmentId}</label>`).join('')}</div>
+        <div class="segment-colors" data-segment-colors="${lamp.id}">${selectedSegments.map((segmentId) => `<label class="segment-color-input">Segment ${segmentId}<input type="color" data-field="segment_color_${segmentId}" data-lamp="${lamp.id}" value="${escapeHtml(colorMap.get(segmentId) || '#9147ff')}"></label>`).join('')}</div>
+        <div class="meta">Nicht ausgewählte Segmente werden bewusst überschrieben und ausgeschaltet, damit keine Hauptfarbe durchrutscht.</div>
       </div>
     </div>`;
 }
+
+function renderSegmentColorsForCard(card, lampId, enabled, segmentMode) {
+  const lamp = state.lamps.find((entry) => entry.id === lampId);
+  const colorsBox = card?.querySelector(`[data-segment-colors="${lampId}"]`);
+  if (!lamp || !colorsBox) return;
+  const baseColor = card.querySelector(`[data-field="color"][data-lamp="${lampId}"]`)?.value || '#9147ff';
+  const previousColorMap = new Map([...card.querySelectorAll(`[data-segment-colors="${lampId}"] input[type="color"]`)].map((input) => [Number(String(input.dataset.field || '').replace('segment_color_', '')), input.value]));
+  const selectedSegments = segmentMode === 'selected'
+    ? [...card.querySelectorAll(`[data-field="segment_ids"][data-lamp="${lampId}"]:checked`)].map((entry) => Number(entry.value))
+    : [];
+  colorsBox.innerHTML = selectedSegments.length
+    ? selectedSegments.map((segmentId) => `<label class="segment-color-input">Segment ${segmentId}<input type="color" data-field="segment_color_${segmentId}" data-lamp="${lampId}" value="${escapeHtml(previousColorMap.get(segmentId) || baseColor || '#9147ff')}"></label>`).join('')
+    : '<div class="meta">Wähle oben mindestens ein Segment, dann erscheinen hier sofort die Farbfelder.</div>';
+  colorsBox.querySelectorAll('input').forEach((input) => { input.disabled = !enabled || segmentMode !== 'selected'; });
+}
+
 
 function renderTargets(containerId, values = null) {
   const container = byId(containerId);
@@ -519,8 +543,9 @@ function renderTargets(containerId, values = null) {
         </div>
         <div class="target-grid">
           <label class="target-mode">Modus<select data-field="mode" data-lamp="${lamp.id}"><option value="static" ${!isEffectMode ? 'selected' : ''}>Farbe</option><option value="effect" ${isEffectMode ? 'selected' : ''}>Effekt</option></select></label>
-          <div class="target-colors target-colors-single">
-            <label>Farbe<input type="color" data-field="color" data-lamp="${lamp.id}" value="${escapeHtml(target.color || '#9147ff')}"></label>
+          <div class="target-colors target-colors-single ${target.segment_mode === 'selected' ? 'target-colors-disabled-by-segments' : ''}" data-base-color-box="${lamp.id}">
+            <label>Hauptfarbe<input type="color" data-field="color" data-lamp="${lamp.id}" value="${escapeHtml(target.color || '#9147ff')}"></label>
+            <div class="meta base-color-hint">${target.segment_mode === 'selected' ? 'Segmentmodus aktiv – Hauptfarbe ist nur visuell und wird nicht verwendet.' : 'Diese Farbe gilt für die ganze Lampe, solange kein Segmentmodus aktiv ist.'}</div>
           </div>
           <label class="effect-only ${isEffectMode ? '' : 'muted-control'}">Effekt<select data-field="effect_name" data-lamp="${lamp.id}"><option value="">Bitte wählen</option>${effects}</select></label>
           <div class="target-range-row effect-only ${isEffectMode ? '' : 'muted-control'}">
@@ -555,8 +580,21 @@ function syncTargetCardState(card) {
     if (!input.closest('.effect-only')) input.disabled = !enabled;
   });
   const picker = card.querySelector(`[data-segment-picker="${lampId}"]`);
+  const segmentBox = card.querySelector('.segment-box');
+  const baseColorBox = card.querySelector(`[data-base-color-box="${lampId}"]`);
+  const baseColorInput = card.querySelector(`[data-field="color"][data-lamp="${lampId}"]`);
+  if (baseColorBox) {
+    baseColorBox.classList.toggle('target-colors-disabled-by-segments', segmentMode === 'selected');
+    const hint = baseColorBox.querySelector('.base-color-hint');
+    if (hint) hint.textContent = segmentMode === 'selected'
+      ? 'Segmentmodus aktiv – Hauptfarbe ist deaktiviert und wird von den Segmentfarben überschrieben.'
+      : 'Diese Farbe gilt für die ganze Lampe, solange kein Segmentmodus aktiv ist.';
+  }
+  if (baseColorInput) baseColorInput.disabled = !enabled || segmentMode === 'selected';
+  if (segmentBox) segmentBox.classList.toggle('segment-box-active', segmentMode === 'selected');
   if (picker) {
     picker.classList.toggle('hidden', segmentMode !== 'selected');
+    renderSegmentColorsForCard(card, lampId, enabled, segmentMode);
     picker.querySelectorAll('input').forEach((input) => { input.disabled = !enabled || segmentMode !== 'selected'; });
   }
 }

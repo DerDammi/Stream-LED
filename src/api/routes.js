@@ -26,6 +26,10 @@ function sanitizeSegmentColors(segmentColors = [], fallback = '#9147ff') {
   }));
 }
 
+function usesSelectedSegments(target = {}) {
+  return target.segment_mode === 'selected' && Array.isArray(target.segment_ids) && target.segment_ids.length > 0;
+}
+
 function sanitizeTargets(targets = []) {
   return (Array.isArray(targets) ? targets : []).filter((target) => target && target.lamp_id).map((target) => ({
     lamp_id: String(target.lamp_id),
@@ -106,7 +110,8 @@ function validateTargetSegments(targets) {
       if (!target.segment_ids.length) throw new Error(`Bitte wähle mindestens ein Segment für ${lamp.name}.`);
       if (target.segment_ids.some((segmentId) => segmentId < 0 || segmentId >= segmentCount)) throw new Error(`Segment-Auswahl für ${lamp.name} liegt außerhalb von 0 bis ${segmentCount - 1}.`);
       const colorMap = new Map((target.segment_colors || []).map((entry) => [Number(entry.segment_id), entry.color]));
-      target.segment_colors = target.segment_ids.map((segmentId) => ({ segment_id: segmentId, color: colorMap.get(segmentId) || target.color || '#9147ff' }));
+      target.segment_colors = target.segment_ids.map((segmentId) => ({ segment_id: segmentId, color: colorMap.get(segmentId) || '#9147ff' }));
+      if (usesSelectedSegments(target)) target.color = target.segment_colors[0]?.color || '#9147ff';
     } else {
       target.segment_ids = [];
       target.segment_colors = [];
@@ -319,7 +324,7 @@ function createApiRouter(effectManager, twitch) {
   router.delete('/lamps/:id', (req, res) => { db.deleteLamp(req.params.id); res.json({ success: true }); });
   router.post('/lamps/:id/refresh-effects', async (req, res) => { const result = await effectManager.refreshLampEffects(req.params.id); res.json({ success: !!result, result, lamp: db.getLamp(req.params.id) }); });
   router.post('/lamps/:id/diagnose', async (req, res) => { try { const result = await effectManager.diagnoseLamp(req.params.id); res.json({ success: true, result, lamp: db.getLamp(req.params.id) }); } catch (error) { res.status(400).json({ error: error.message }); } });
-  router.post('/lamps/:id/test', express.json(), async (req, res) => { const { action, color, effect_name, effect_speed, effect_intensity, segment_mode, segment_ids, segment_colors } = req.body; const segmentOptions = { segment_mode: segment_mode === 'selected' ? 'selected' : 'all', segment_ids: Array.isArray(segment_ids) ? segment_ids : [], segment_colors: sanitizeSegmentColors(segment_colors, color || '#9147ff') }; const ok = action === 'off' ? await effectManager.setLampOff(req.params.id) : action === 'effect' ? await effectManager.setLampEffect(req.params.id, effect_name, { speed: effect_speed, intensity: effect_intensity, primaryColor: color, ...segmentOptions }) : await effectManager.setLampColor(req.params.id, color || '#ffffff', segmentOptions); res.json({ success: ok }); });
+  router.post('/lamps/:id/test', express.json(), async (req, res) => { const { action, color, effect_name, effect_speed, effect_intensity, segment_mode, segment_ids, segment_colors } = req.body; const segmentOptions = { segment_mode: segment_mode === 'selected' ? 'selected' : 'all', segment_ids: Array.isArray(segment_ids) ? segment_ids : [], segment_colors: sanitizeSegmentColors(segment_colors, '#9147ff') }; const effectiveColor = segmentOptions.segment_mode === 'selected' && segmentOptions.segment_colors.length ? segmentOptions.segment_colors[0].color : (color || '#ffffff'); const ok = action === 'off' ? await effectManager.setLampOff(req.params.id) : action === 'effect' ? await effectManager.setLampEffect(req.params.id, effect_name, { speed: effect_speed, intensity: effect_intensity, primaryColor: effectiveColor, ...segmentOptions }) : await effectManager.setLampColor(req.params.id, effectiveColor, segmentOptions); res.json({ success: ok }); });
 
   router.get('/streamers', (_req, res) => res.json(db.getAllStreamers()));
   router.post('/streamers', express.json(), async (req, res) => { try { const streamer = db.saveStreamer({ id: uuidv4(), ...validateStreamerPayload(req.body) }); await twitch.refreshChannels(); res.json({ success: true, streamer }); } catch (error) { res.status(400).json({ error: error.message }); } });

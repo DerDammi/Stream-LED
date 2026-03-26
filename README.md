@@ -34,6 +34,13 @@ Du kannst damit:
 - HTTP und HTTPS (selbstsigniertes Zertifikat)
 
 
+## Was in V1.6.1 besser ist
+
+- **WLED Segment-Priorität repariert**: Wenn einzelne Segmente gewählt sind, wird die normale Hauptfarbe jetzt klar überschrieben statt heimlich weiter als Fallback mitzuspielen
+- **Segment-UI direkter**: Sobald Segmentmodus/Segmentauswahl aktiv ist, erscheinen die Segment-Farbfelder sofort und die deaktivierte Hauptfarbe wird sichtbar erklärt
+- **Nicht gewählte Segmente werden aktiv ausgeschaltet**, damit bei Rotation oder Regelwechsel keine alte Hauptfarbe durchscheint
+- bestehendes Verhalten für Lampen ohne Segmentmodus bleibt gleich
+
 ## Was in V1.6.0 besser ist
 
 - **WLED-only Segment-Support**: WLED-Lampen können jetzt eine Segmentanzahl speichern und im UI bearbeiten
@@ -169,17 +176,17 @@ docker push derdammi/stream-led:latest
 ### Optional mit Version-Tag
 
 ```bash
-docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.0 .
+docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.1 .
 docker push derdammi/stream-led:latest
-docker push derdammi/stream-led:1.6.0
+docker push derdammi/stream-led:1.6.1
 ```
 
 Wenn du nach diesem Update sauber versionieren willst, ist der typische Release-Flow also:
 
 ```bash
-docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.0 .
+docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.1 .
 docker push derdammi/stream-led:latest
-docker push derdammi/stream-led:1.6.0
+docker push derdammi/stream-led:1.6.1
 ```
 
 ### Wichtige Hinweise

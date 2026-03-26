@@ -261,10 +261,13 @@ class EffectManager {
         }
         continue;
       }
+      const usesSegmentColors = target.segment_mode === 'selected' && Array.isArray(target.segment_ids) && target.segment_ids.length > 0;
+      const segmentColors = Array.isArray(target.segment_colors) ? target.segment_colors : [];
       const nextState = {
         source: target.source,
         mode: target.mode || 'static',
-        color: target.color || '#ffffff',
+        color: usesSegmentColors ? (segmentColors[0]?.color || '#9147ff') : (target.color || '#ffffff'),
+        color_overridden_by_segments: usesSegmentColors,
         effect_name: target.effect_name || '',
         effect_speed: Number(target.effect_speed || 128),
         effect_intensity: Number(target.effect_intensity || 128),
