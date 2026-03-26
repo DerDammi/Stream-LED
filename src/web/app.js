@@ -20,7 +20,8 @@ const RULE_PRESETS = {
 const byId = (id) => document.getElementById(id);
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const formatTime = (value) => value ? new Date(value).toLocaleString('de-DE') : 'noch nie';
-const effectLabel = (target) => target.mode === 'effect' ? `Effekt ${target.effect_name || '-'} · ${target.color || '#9147ff'}${target.secondary_color ? ` → ${target.secondary_color}` : ''}` : `Farbe ${target.color || '#ffffff'}`;
+const formatSegments = (target) => target.segment_mode === 'selected' && Array.isArray(target.segment_ids) && target.segment_ids.length ? ` · Segmente ${target.segment_ids.join(', ')}` : '';
+const effectLabel = (target) => target.mode === 'effect' ? `Effekt ${target.effect_name || '-'} · ${target.color || '#9147ff'}${target.secondary_color ? ` → ${target.secondary_color}` : ''}${formatSegments(target)}` : `Farbe ${target.color || '#ffffff'}${formatSegments(target)}`;
 const rotationLabel = (target) => `${Math.max(5, Number(target?.rotation_seconds || state.settings?.rotation_seconds || 20))}s`;
 
 window.openModal = (id) => document.getElementById(id).classList.remove('hidden');
@@ -292,7 +293,7 @@ function renderLamps() {
       <div class="card comfort-card lamp-card">
         <div>
           <strong>${escapeHtml(lamp.name)}</strong>
-          <div class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${escapeHtml(lamp.address)} · ${(lamp.effects || []).length} Effekte · ${lamp.last_seen ? 'online' : 'offline'}</div>
+          <div class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${escapeHtml(lamp.address)} · ${(lamp.effects || []).length} Effekte${lamp.type === 'wled' ? ` · ${Number(lamp.metadata?.segment_count || 1)} Segmente` : ''} · ${lamp.last_seen ? 'online' : 'offline'}</div>
           <div class="lamp-test-row">
             <button class="btn btn-secondary" onclick="testLamp('${lamp.id}')">Kurztest</button>
             <button class="btn btn-secondary" onclick="testLampOff('${lamp.id}')">Aus</button>
@@ -319,6 +320,7 @@ window.editLamp = function(id) {
   byId('lamp-type').value = lamp.type;
   byId('lamp-address').value = lamp.metadata?.bridge_ip || lamp.address;
   byId('lamp-api-key').value = lamp.api_key || '';
+  if (byId('lamp-segment-count')) byId('lamp-segment-count').value = Math.max(1, Number(lamp.metadata?.segment_count || 1));
   if (lamp.type === 'hue') { const select = byId('hue-light-select'); if (select) select.innerHTML = `<option value="${escapeHtml(lamp.metadata?.light_id || lamp.address.split('/')[1] || '')}" selected>${escapeHtml(lamp.name)}</option>`; }
   byId('lamp-enabled').checked = lamp.enabled;
   renderLampWizardHelp();
@@ -471,21 +473,44 @@ function fillRuleTestSelects() {
   if (chat) chat.innerHTML = ['<option value="">Keine Chat-Regel</option>'].concat(state.chatRules.map((rule) => `<option value="${rule.id}">${escapeHtml(rule.name)}</option>`)).join('');
 }
 
+function buildDefaultTarget(lamp) {
+  const segmentCount = Math.max(1, Number(lamp.metadata?.segment_count || 1));
+  return { lamp_id: lamp.id, enabled: false, mode: 'static', color: '#9147ff', secondary_color: '#ffffff', effect_name: '', effect_speed: 128, effect_intensity: 128, rotation_seconds: Number(state.settings?.rotation_seconds || 20), segment_mode: 'all', segment_ids: Array.from({ length: segmentCount }, (_, index) => index), segment_colors: [] };
+}
+
+function renderSegmentColorInputs(lamp, target) {
+  if (lamp.type !== 'wled') return '';
+  const segmentCount = Math.max(1, Number(lamp.metadata?.segment_count || 1));
+  const selectedSegments = target.segment_mode === 'selected'
+    ? (Array.isArray(target.segment_ids) && target.segment_ids.length ? target.segment_ids : Array.from({ length: segmentCount }, (_, index) => index))
+    : [];
+  const colorMap = new Map((Array.isArray(target.segment_colors) ? target.segment_colors : []).map((entry) => [Number(entry.segment_id), entry.color]));
+  return `
+    <div class="segment-box wled-only">
+      <label>WLED Segmente<select data-field="segment_mode" data-lamp="${lamp.id}"><option value="all" ${target.segment_mode !== 'selected' ? 'selected' : ''}>Alle Segmente gleich</option><option value="selected" ${target.segment_mode === 'selected' ? 'selected' : ''}>Einzelne Segmente</option></select></label>
+      <div class="segment-picker ${target.segment_mode === 'selected' ? '' : 'hidden'}" data-segment-picker="${lamp.id}">
+        <div class="segment-checks">${Array.from({ length: segmentCount }, (_, segmentId) => `<label class="inline"><input type="checkbox" data-field="segment_ids" data-lamp="${lamp.id}" value="${segmentId}" ${selectedSegments.includes(segmentId) ? 'checked' : ''}> Segment ${segmentId}</label>`).join('')}</div>
+        <div class="segment-colors" data-segment-colors="${lamp.id}">${selectedSegments.map((segmentId) => `<label>Segment ${segmentId}<input type="color" data-field="segment_color_${segmentId}" data-lamp="${lamp.id}" value="${escapeHtml(colorMap.get(segmentId) || target.color || '#9147ff')}"></label>`).join('')}</div>
+        <div class="meta">Nur WLED bekommt Segment-Auswahl. Hue und Govee bleiben bewusst lampenweit.</div>
+      </div>
+    </div>`;
+}
+
 function renderTargets(containerId, values = null) {
   const container = byId(containerId);
   if (!state.lamps.length) { container.innerHTML = '<div class="muted">Bitte erst Lampen anlegen.</div>'; return; }
-  const current = values || state.lamps.map((lamp) => ({ lamp_id: lamp.id, enabled: false, mode: 'static', color: '#9147ff', secondary_color: '#ffffff', effect_name: '', effect_speed: 128, effect_intensity: 128, rotation_seconds: Number(state.settings?.rotation_seconds || 20) }));
+  const current = values || state.lamps.map((lamp) => buildDefaultTarget(lamp));
   container.innerHTML = state.lamps.map((lamp) => {
-    const target = current.find((x) => x.lamp_id === lamp.id) || { lamp_id: lamp.id, enabled: false, mode: 'static', color: '#9147ff', secondary_color: '#ffffff', effect_name: '', effect_speed: 128, effect_intensity: 128 };
+    const target = current.find((x) => x.lamp_id === lamp.id) || buildDefaultTarget(lamp);
     const effects = (lamp.effects || []).map((fx) => { const value = String(fx.id ?? fx.name); return `<option value="${escapeHtml(value)}" ${value === String(target.effect_name || '') ? 'selected' : ''}>${escapeHtml(fx.name ?? fx.id)}</option>`; }).join('');
     const checked = values ? !!values.find((x) => x.lamp_id === lamp.id) : target.enabled !== false;
     const isEffectMode = target.mode === 'effect';
     return `
-      <div class="target-card" data-target-card="${lamp.id}">
+      <div class="target-card" data-target-card="${lamp.id}" data-lamp-type="${lamp.type}">
         <div class="target-head">
           <div class="target-title-wrap">
             <label class="inline target-toggle"><input type="checkbox" data-field="enabled" data-lamp="${lamp.id}" ${checked ? 'checked' : ''}> <span>${escapeHtml(lamp.name)}</span></label>
-            <span class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${(lamp.effects || []).length} Effekte</span>
+            <span class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${(lamp.effects || []).length} Effekte${lamp.type === 'wled' ? ` · ${Math.max(1, Number(lamp.metadata?.segment_count || 1))} Segmente` : ''}</span>
           </div>
           <div class="target-actions target-actions-top">
             <button type="button" class="btn btn-ghost" onclick="copyTargetToAll('${containerId}','${lamp.id}')">Auf alle kopieren</button>
@@ -504,11 +529,12 @@ function renderTargets(containerId, values = null) {
             <label>Intensität<input type="range" min="0" max="255" value="${Number(target.effect_intensity || 128)}" data-field="effect_intensity" data-lamp="${lamp.id}"></label>
           </div>
           <label class="target-rotation">Rotation pro Lampe (Sek.)<input type="number" min="5" max="600" value="${Math.max(5, Number(target.rotation_seconds || state.settings?.rotation_seconds || 20))}" data-field="rotation_seconds" data-lamp="${lamp.id}"></label>
+          ${renderSegmentColorInputs(lamp, target)}
         </div>
       </div>`;
   }).join('');
   container.querySelectorAll('input,select').forEach((el) => el.addEventListener('input', () => {
-    if (el.dataset.field === 'mode' || el.dataset.field === 'enabled') syncTargetCardState(el.closest('[data-target-card]'));
+    if (['mode', 'enabled', 'segment_mode', 'segment_ids'].includes(el.dataset.field)) syncTargetCardState(el.closest('[data-target-card]'));
     updateTargetSummary(containerId, containerId === 'online-rule-targets' ? 'online-target-summary' : 'chat-target-summary');
   }));
   container.querySelectorAll('[data-target-card]').forEach(syncTargetCardState);
@@ -519,6 +545,7 @@ function syncTargetCardState(card) {
   const lampId = card.dataset.targetCard;
   const enabled = card.querySelector(`[data-field="enabled"][data-lamp="${lampId}"]`)?.checked;
   const mode = card.querySelector(`[data-field="mode"][data-lamp="${lampId}"]`)?.value;
+  const segmentMode = card.querySelector(`[data-field="segment_mode"][data-lamp="${lampId}"]`)?.value || 'all';
   card.classList.toggle('target-card-disabled', !enabled);
   card.querySelectorAll('.effect-only').forEach((el) => {
     el.classList.toggle('muted-control', mode !== 'effect');
@@ -528,6 +555,11 @@ function syncTargetCardState(card) {
     if (input.dataset.field === 'enabled') return;
     if (!input.closest('.effect-only')) input.disabled = !enabled;
   });
+  const picker = card.querySelector(`[data-segment-picker="${lampId}"]`);
+  if (picker) {
+    picker.classList.toggle('hidden', segmentMode !== 'selected');
+    picker.querySelectorAll('input').forEach((input) => { input.disabled = !enabled || segmentMode !== 'selected'; });
+  }
 }
 
 window.copyTargetToAll = function(containerId, lampId) {
@@ -537,35 +569,43 @@ window.copyTargetToAll = function(containerId, lampId) {
 };
 window.previewTarget = async function(lampId, containerId) {
   const target = readTarget(containerId, lampId); if (!target) return toast('Bitte Lampe erst aktivieren.', true);
-  if (target.mode === 'effect' && target.effect_name) await api(`/lamps/${lampId}/test`, { method: 'POST', body: JSON.stringify({ action: 'effect', color: target.color, secondary_color: target.secondary_color, effect_name: target.effect_name, effect_speed: target.effect_speed, effect_intensity: target.effect_intensity }) });
-  else await api(`/lamps/${lampId}/test`, { method: 'POST', body: JSON.stringify({ action: 'color', color: target.color }) });
+  if (target.mode === 'effect' && target.effect_name) await api(`/lamps/${lampId}/test`, { method: 'POST', body: JSON.stringify({ action: 'effect', color: target.color, secondary_color: target.secondary_color, effect_name: target.effect_name, effect_speed: target.effect_speed, effect_intensity: target.effect_intensity, segment_mode: target.segment_mode, segment_ids: target.segment_ids, segment_colors: target.segment_colors }) });
+  else await api(`/lamps/${lampId}/test`, { method: 'POST', body: JSON.stringify({ action: 'color', color: target.color, segment_mode: target.segment_mode, segment_ids: target.segment_ids, segment_colors: target.segment_colors }) });
   toast('Vorschau an Lampe gesendet.');
 };
 
 function readTarget(containerId, lampId) {
-  const enabled = byId(containerId).querySelector(`[data-field="enabled"][data-lamp="${lampId}"]`)?.checked;
+  const root = byId(containerId);
+  const enabled = root.querySelector(`[data-field="enabled"][data-lamp="${lampId}"]`)?.checked;
   if (!enabled) return null;
+  const segmentMode = root.querySelector(`[data-field="segment_mode"][data-lamp="${lampId}"]`)?.value || 'all';
+  const segmentIds = [...root.querySelectorAll(`[data-field="segment_ids"][data-lamp="${lampId}"]:checked`)].map((entry) => Number(entry.value));
   return {
-    mode: byId(containerId).querySelector(`[data-field="mode"][data-lamp="${lampId}"]`).value,
-    color: byId(containerId).querySelector(`[data-field="color"][data-lamp="${lampId}"]`).value,
-    secondary_color: byId(containerId).querySelector(`[data-field="secondary_color"][data-lamp="${lampId}"]`).value,
-    effect_name: byId(containerId).querySelector(`[data-field="effect_name"][data-lamp="${lampId}"]`).value,
-    effect_speed: Number(byId(containerId).querySelector(`[data-field="effect_speed"][data-lamp="${lampId}"]`).value),
-    effect_intensity: Number(byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lampId}"]`).value),
-    rotation_seconds: Number(byId(containerId).querySelector(`[data-field="rotation_seconds"][data-lamp="${lampId}"]`)?.value || state.settings?.rotation_seconds || 20)
+    mode: root.querySelector(`[data-field="mode"][data-lamp="${lampId}"]`).value,
+    color: root.querySelector(`[data-field="color"][data-lamp="${lampId}"]`).value,
+    secondary_color: root.querySelector(`[data-field="secondary_color"][data-lamp="${lampId}"]`).value,
+    effect_name: root.querySelector(`[data-field="effect_name"][data-lamp="${lampId}"]`).value,
+    effect_speed: Number(root.querySelector(`[data-field="effect_speed"][data-lamp="${lampId}"]`).value),
+    effect_intensity: Number(root.querySelector(`[data-field="effect_intensity"][data-lamp="${lampId}"]`).value),
+    rotation_seconds: Number(root.querySelector(`[data-field="rotation_seconds"][data-lamp="${lampId}"]`)?.value || state.settings?.rotation_seconds || 20),
+    segment_mode: segmentMode,
+    segment_ids: segmentMode === 'selected' ? segmentIds : [],
+    segment_colors: segmentMode === 'selected' ? segmentIds.map((segmentId) => ({ segment_id: segmentId, color: root.querySelector(`[data-field="segment_color_${segmentId}"][data-lamp="${lampId}"]`)?.value || root.querySelector(`[data-field="color"][data-lamp="${lampId}"]`).value })) : []
   };
 }
 
 function bulkSetTargets(containerId, presetTarget) {
   state.lamps.forEach((lamp) => {
-    const enabled = byId(containerId).querySelector(`[data-field="enabled"][data-lamp="${lamp.id}"]`);
-    const mode = byId(containerId).querySelector(`[data-field="mode"][data-lamp="${lamp.id}"]`);
-    const color = byId(containerId).querySelector(`[data-field="color"][data-lamp="${lamp.id}"]`);
-    const effect = byId(containerId).querySelector(`[data-field="effect_name"][data-lamp="${lamp.id}"]`);
-    const secondaryColor = byId(containerId).querySelector(`[data-field="secondary_color"][data-lamp="${lamp.id}"]`);
-    const speed = byId(containerId).querySelector(`[data-field="effect_speed"][data-lamp="${lamp.id}"]`);
-    const intensity = byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lamp.id}"]`);
-    const rotation = byId(containerId).querySelector(`[data-field="rotation_seconds"][data-lamp="${lamp.id}"]`);
+    const root = byId(containerId);
+    const enabled = root.querySelector(`[data-field="enabled"][data-lamp="${lamp.id}"]`);
+    const mode = root.querySelector(`[data-field="mode"][data-lamp="${lamp.id}"]`);
+    const color = root.querySelector(`[data-field="color"][data-lamp="${lamp.id}"]`);
+    const effect = root.querySelector(`[data-field="effect_name"][data-lamp="${lamp.id}"]`);
+    const secondaryColor = root.querySelector(`[data-field="secondary_color"][data-lamp="${lamp.id}"]`);
+    const speed = root.querySelector(`[data-field="effect_speed"][data-lamp="${lamp.id}"]`);
+    const intensity = root.querySelector(`[data-field="effect_intensity"][data-lamp="${lamp.id}"]`);
+    const rotation = root.querySelector(`[data-field="rotation_seconds"][data-lamp="${lamp.id}"]`);
+    const segmentMode = root.querySelector(`[data-field="segment_mode"][data-lamp="${lamp.id}"]`);
     if (enabled) enabled.checked = true;
     if (mode && presetTarget.mode) mode.value = presetTarget.mode;
     if (color && presetTarget.color) color.value = presetTarget.color;
@@ -577,6 +617,16 @@ function bulkSetTargets(containerId, presetTarget) {
     if (speed && presetTarget.effect_speed != null) speed.value = presetTarget.effect_speed;
     if (intensity && presetTarget.effect_intensity != null) intensity.value = presetTarget.effect_intensity;
     if (rotation) rotation.value = presetTarget.rotation_seconds != null ? presetTarget.rotation_seconds : Number(state.settings?.rotation_seconds || 20);
+    if (segmentMode && lamp.type === 'wled') segmentMode.value = presetTarget.segment_mode || 'all';
+    if (lamp.type === 'wled' && presetTarget.segment_mode === 'selected') {
+      const selected = new Set((presetTarget.segment_ids || []).map(Number));
+      root.querySelectorAll(`[data-field="segment_ids"][data-lamp="${lamp.id}"]`).forEach((box) => { box.checked = selected.has(Number(box.value)); });
+      (presetTarget.segment_colors || []).forEach((entry) => {
+        const colorInput = root.querySelector(`[data-field="segment_color_${Number(entry.segment_id)}"][data-lamp="${lamp.id}"]`);
+        if (colorInput && entry.color) colorInput.value = entry.color;
+      });
+    }
+    syncTargetCardState(root.querySelector(`[data-target-card="${lamp.id}"]`));
   });
   updateTargetSummary(containerId, containerId === 'online-rule-targets' ? 'online-target-summary' : 'chat-target-summary');
 }
@@ -594,9 +644,8 @@ function applyChatPreset() { const preset = RULE_PRESETS.chat.find((entry) => en
 
 function collectTargets(containerId) {
   return state.lamps.map((lamp) => {
-    const enabled = byId(containerId).querySelector(`[data-field="enabled"][data-lamp="${lamp.id}"]`)?.checked;
-    if (!enabled) return null;
-    return { lamp_id: lamp.id, mode: byId(containerId).querySelector(`[data-field="mode"][data-lamp="${lamp.id}"]`).value, color: byId(containerId).querySelector(`[data-field="color"][data-lamp="${lamp.id}"]`).value, secondary_color: byId(containerId).querySelector(`[data-field="secondary_color"][data-lamp="${lamp.id}"]`).value, effect_name: byId(containerId).querySelector(`[data-field="effect_name"][data-lamp="${lamp.id}"]`).value, effect_speed: Number(byId(containerId).querySelector(`[data-field="effect_speed"][data-lamp="${lamp.id}"]`).value), effect_intensity: Number(byId(containerId).querySelector(`[data-field="effect_intensity"][data-lamp="${lamp.id}"]`).value), rotation_seconds: Number(byId(containerId).querySelector(`[data-field="rotation_seconds"][data-lamp="${lamp.id}"]`)?.value || state.settings?.rotation_seconds || 20) };
+    const target = readTarget(containerId, lamp.id);
+    return target ? { lamp_id: lamp.id, ...target } : null;
   }).filter(Boolean);
 }
 
@@ -633,7 +682,7 @@ function renderLampWizardHelp() {
   const box = byId('lamp-helper-box');
   if (!box) return;
   const content = type === 'wled'
-    ? '<strong>WLED Schnellhilfe</strong><br>Trage am besten nur IP oder Hostname ein, z. B. <code>192.168.1.50</code> oder <code>wled-kueche.local</code>. Danach kannst du direkt „Diagnose“ und „Effekte neu laden“ nutzen.'
+    ? '<strong>WLED Schnellhilfe</strong><br>Trage am besten nur IP oder Hostname ein, z. B. <code>192.168.1.50</code> oder <code>wled-kueche.local</code>. Wenn dein WLED mehrere Segmente hat, trage unten die Segmentanzahl ein. Danach kannst du direkt „Diagnose“ und „Effekte neu laden“ nutzen.'
     : type === 'govee'
       ? '<strong>Govee Schnellhilfe</strong><br>Für lokale Steuerung meist IP eintragen. Falls dein Modell es braucht oder Cloud-Steuerung genutzt wird, zusätzlich den API-Key hinterlegen. Eine kurze Preset-Liste ist bei Govee normal.'
       : '<strong>Hue Schnellhilfe</strong><br>Am einfachsten unten im Hue-Assistenten: Bridge suchen, Link-Button drücken, koppeln, Licht auswählen, speichern. Adresse wird dabei automatisch gebaut.';
@@ -646,6 +695,8 @@ function renderHueAssistant() {
   const box = byId('hue-assistant-box');
   if (!box) return;
   box.classList.toggle('hidden', type !== 'hue');
+  const wledBox = byId('wled-segment-box');
+  if (wledBox) wledBox.classList.toggle('hidden', type !== 'wled');
 }
 
 async function pairHueBridge() {
@@ -697,7 +748,7 @@ async function saveLamp(e) {
   e.preventDefault();
   const type = byId('lamp-type').value;
   const id = byId('lamp-id').value;
-  const payload = { name: byId('lamp-name').value.trim(), type, address: byId('lamp-address').value.trim(), api_key: byId('lamp-api-key').value.trim() || null, enabled: byId('lamp-enabled').checked };
+  const payload = { name: byId('lamp-name').value.trim(), type, address: byId('lamp-address').value.trim(), api_key: byId('lamp-api-key').value.trim() || null, enabled: byId('lamp-enabled').checked, metadata: type === 'wled' ? { segment_count: Math.max(1, Number(byId('lamp-segment-count')?.value || 1)) } : {} };
   if (type === 'hue') {
     const lightId = byId('hue-light-select').value;
     const lightName = byId('hue-light-select').selectedOptions?.[0]?.textContent || payload.name;
@@ -716,7 +767,7 @@ async function saveSettings() { await api('/settings', { method: 'PUT', body: JS
 async function exportConfig() {
   const payload = await api('/config/export');
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `twitch-lamp-config-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`; link.click(); URL.revokeObjectURL(link.href);
+  const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `stream-lamp-config-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`; link.click(); URL.revokeObjectURL(link.href);
   byId('import-hint').innerHTML = 'Backup exportiert. Du kannst jetzt entspannt importieren.'; toast('Config exportiert.');
 }
 
@@ -737,7 +788,7 @@ async function importConfig(event) {
 }
 
 window.deleteEntity = async function(endpoint) { if (!confirm('Wirklich löschen?')) return; await api(endpoint, { method: 'DELETE' }); toast('Eintrag gelöscht.'); await refreshAll(); };
-function resetLampForm() { byId('lamp-form').reset(); byId('lamp-id').value = ''; byId('lamp-enabled').checked = true; byId('lamp-type').value = 'wled'; byId('lamp-diagnostics-box').textContent = 'Noch keine Diagnose gelaufen.'; const select = byId('hue-light-select'); if (select) select.innerHTML = '<option value=>Bitte Licht wählen</option>'; const result = byId('hue-assistant-result'); if (result) result.textContent = 'Noch keine Hue-Kopplung gestartet.'; renderLampWizardHelp(); renderHueAssistant(); }
+function resetLampForm() { byId('lamp-form').reset(); byId('lamp-id').value = ''; byId('lamp-enabled').checked = true; byId('lamp-type').value = 'wled'; if (byId('lamp-segment-count')) byId('lamp-segment-count').value = 1; byId('lamp-diagnostics-box').textContent = 'Noch keine Diagnose gelaufen.'; const select = byId('hue-light-select'); if (select) select.innerHTML = '<option value=>Bitte Licht wählen</option>'; const result = byId('hue-assistant-result'); if (result) result.textContent = 'Noch keine Hue-Kopplung gestartet.'; renderLampWizardHelp(); renderHueAssistant(); }
 function resetStreamerForm() { byId('streamer-form').reset(); byId('streamer-id').value = ''; byId('streamer-enabled').checked = true; }
 function resetOnlineRuleForm() { byId('online-rule-form').reset(); byId('online-rule-id').value = ''; byId('online-rule-enabled').checked = true; byId('online-rule-preset').value = ''; fillStreamerSelects(); renderTargets('online-rule-targets'); updateTargetSummary('online-rule-targets', 'online-target-summary'); }
 function resetChatRuleForm() { byId('chat-rule-form').reset(); byId('chat-rule-id').value = ''; byId('chat-rule-window').value = 10; byId('chat-rule-min').value = 5; byId('chat-rule-enabled').checked = true; byId('chat-rule-preset').value = ''; fillStreamerSelects(); renderTargets('chat-rule-targets'); updateTargetSummary('chat-rule-targets', 'chat-target-summary'); renderChatRulePreview(); byId('chat-assistant-result').textContent = 'Wähle kurz dein Ziel, dann fülle ich gute Startwerte ein.'; }

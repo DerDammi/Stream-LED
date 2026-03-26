@@ -58,6 +58,7 @@ class EffectManager {
     if (!lamp || !lamp.enabled) return null;
     const result = await this.getController(lamp.type).discoverEffects(lamp);
     if (result?.effects) db.updateLampEffects(lamp.id, result.effects);
+    if (lamp.type === 'wled' && result?.segment_count) db.saveLamp({ ...lamp, metadata: { ...(lamp.metadata || {}), segment_count: Math.max(1, Number(result.segment_count || 1)) } });
     return result;
   }
 
@@ -269,7 +270,10 @@ class EffectManager {
         effect_speed: Number(target.effect_speed || 128),
         effect_intensity: Number(target.effect_intensity || 128),
         rotation_seconds: Number(target.rotation_seconds || db.getSetting('rotation_seconds', 20) || 20),
-        streamer_login: target.streamer_login || null
+        streamer_login: target.streamer_login || null,
+        segment_mode: target.segment_mode === 'selected' ? 'selected' : 'all',
+        segment_ids: Array.isArray(target.segment_ids) ? target.segment_ids : [],
+        segment_colors: Array.isArray(target.segment_colors) ? target.segment_colors : []
       };
       const prev = this.runtime.lampStates.get(lamp.id);
       if (JSON.stringify(prev) === JSON.stringify(nextState)) {
@@ -279,9 +283,9 @@ class EffectManager {
       actions.push({ lamp_id: lamp.id, lamp_name: lamp.name, action: nextState.mode === 'effect' && nextState.effect_name ? 'effect' : 'color', nextState });
       if (dryRun) continue;
       if (nextState.mode === 'effect' && nextState.effect_name) {
-        await this.getController(lamp.type).setEffect(lamp, nextState.effect_name, { speed: nextState.effect_speed, intensity: nextState.effect_intensity, primaryColor: nextState.color, secondaryColor: nextState.secondary_color });
+        await this.getController(lamp.type).setEffect(lamp, nextState.effect_name, { speed: nextState.effect_speed, intensity: nextState.effect_intensity, primaryColor: nextState.color, secondaryColor: nextState.secondary_color, segment_mode: nextState.segment_mode, segment_ids: nextState.segment_ids, segment_colors: nextState.segment_colors });
       } else {
-        await this.getController(lamp.type).setColor(lamp, nextState.color);
+        await this.getController(lamp.type).setColor(lamp, nextState.color, { segment_mode: nextState.segment_mode, segment_ids: nextState.segment_ids, segment_colors: nextState.segment_colors });
       }
       this.runtime.lampStates.set(lamp.id, nextState);
     }
@@ -311,14 +315,14 @@ class EffectManager {
     if (!lamp) throw new Error('Lampe für Vorschau nicht gefunden.');
     if (options.dryRun) return { lamp_id: lamp.id, lamp_name: lamp.name, dryRun: true, target };
     if (target.mode === 'effect' && target.effect_name) {
-      await this.getController(lamp.type).setEffect(lamp, target.effect_name, { speed: target.effect_speed, intensity: target.effect_intensity, primaryColor: target.color, secondaryColor: target.secondary_color });
+      await this.getController(lamp.type).setEffect(lamp, target.effect_name, { speed: target.effect_speed, intensity: target.effect_intensity, primaryColor: target.color, secondaryColor: target.secondary_color, segment_mode: target.segment_mode, segment_ids: target.segment_ids, segment_colors: target.segment_colors });
     } else {
-      await this.getController(lamp.type).setColor(lamp, target.color || '#ffffff');
+      await this.getController(lamp.type).setColor(lamp, target.color || '#ffffff', { segment_mode: target.segment_mode, segment_ids: target.segment_ids, segment_colors: target.segment_colors });
     }
     return { lamp_id: lamp.id, lamp_name: lamp.name, dryRun: false, target };
   }
 
-  async setLampColor(lampId, color) { const lamp = db.getLamp(lampId); if (!lamp) return false; return this.getController(lamp.type).setColor(lamp, color); }
+  async setLampColor(lampId, color, opts = {}) { const lamp = db.getLamp(lampId); if (!lamp) return false; return this.getController(lamp.type).setColor(lamp, color, opts); }
   async setLampEffect(lampId, effectName, opts = {}) { const lamp = db.getLamp(lampId); if (!lamp) return false; return this.getController(lamp.type).setEffect(lamp, effectName, opts); }
   async setLampOff(lampId) { const lamp = db.getLamp(lampId); if (!lamp) return false; return this.getController(lamp.type).setOff(lamp); }
   destroy() { if (this.healthTimer) clearInterval(this.healthTimer); }

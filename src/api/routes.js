@@ -19,6 +19,13 @@ function normalizeAddress(value = '') {
   return String(value || '').trim().replace(/^https?:\/\//, '').replace(/\/json.*$/, '').replace(/\/$/, '');
 }
 
+function sanitizeSegmentColors(segmentColors = [], fallback = '#9147ff') {
+  return (Array.isArray(segmentColors) ? segmentColors : []).map((entry, index) => ({
+    segment_id: Math.max(0, Number.isFinite(Number(entry?.segment_id)) ? Math.round(Number(entry.segment_id)) : index),
+    color: /^#[0-9a-f]{6}$/i.test(String(entry?.color || '')) ? String(entry.color) : fallback
+  }));
+}
+
 function sanitizeTargets(targets = []) {
   return (Array.isArray(targets) ? targets : []).filter((target) => target && target.lamp_id).map((target) => ({
     lamp_id: String(target.lamp_id),
@@ -28,7 +35,10 @@ function sanitizeTargets(targets = []) {
     effect_name: target.effect_name == null ? '' : String(target.effect_name),
     effect_speed: clampByte(target.effect_speed),
     effect_intensity: clampByte(target.effect_intensity),
-    rotation_seconds: clampRotationSeconds(target.rotation_seconds)
+    rotation_seconds: clampRotationSeconds(target.rotation_seconds),
+    segment_mode: target.segment_mode === 'selected' ? 'selected' : 'all',
+    segment_ids: [...new Set((Array.isArray(target.segment_ids) ? target.segment_ids : []).map((value) => Math.max(0, Math.round(Number(value)))).filter((value) => Number.isFinite(value)))].sort((a, b) => a - b),
+    segment_colors: sanitizeSegmentColors(target.segment_colors, /^#[0-9a-f]{6}$/i.test(String(target.color || '')) ? String(target.color) : '#9147ff')
   }));
 }
 
@@ -54,7 +64,8 @@ function validateLampPayload(payload, existingId = null) {
   if (type === 'govee' && !api_key && !/^(\d{1,3}\.){3}\d{1,3}$/.test(address)) throw new Error('Für Govee ohne API-Key bitte eine lokale IP-Adresse eintragen.');
   const duplicate = db.getAllLamps().find((lamp) => lamp.id !== existingId && lamp.address === address && lamp.type === type);
   if (duplicate) throw new Error(`Diese Lampe existiert schon: ${duplicate.name}`);
-  return { name, type, address, api_key, enabled: payload.enabled !== false, metadata: { ...metadata, bridge_ip: type === 'hue' ? address.split('/')[0] : metadata.bridge_ip || null, light_id: type === 'hue' ? address.split('/')[1] : metadata.light_id || null } };
+  const segment_count = Math.max(1, Math.min(32, Math.round(Number(metadata.segment_count ?? payload.segment_count ?? 1) || 1)));
+  return { name, type, address, api_key, enabled: payload.enabled !== false, metadata: { ...metadata, bridge_ip: type === 'hue' ? address.split('/')[0] : metadata.bridge_ip || null, light_id: type === 'hue' ? address.split('/')[1] : metadata.light_id || null, segment_count: type === 'wled' ? segment_count : null } };
 }
 
 function validateStreamerPayload(payload, existingId = null) {
@@ -81,7 +92,27 @@ function validateChatRulePayload(payload) {
   if (!Number.isFinite(minMatches) || minMatches < 1 || minMatches > 1000) throw new Error('Mindestanzahl muss zwischen 1 und 1000 liegen.');
   if (targets.length === 0) throw new Error('Bitte aktiviere mindestens eine Lampe für diese Regel.');
   if (minMatches > windowSeconds * 10) throw new Error('Die Regel ist sehr streng. Prüfe bitte Mindestanzahl und Zeitfenster noch einmal.');
+  validateTargetSegments(targets);
   return { name, streamer_id: streamerId, match_text: matchText, match_type: matchType, window_seconds: windowSeconds, min_matches: minMatches, enabled: payload.enabled !== false, targets };
+}
+
+function validateTargetSegments(targets) {
+  for (const target of targets) {
+    const lamp = db.getLamp(target.lamp_id);
+    if (!lamp) throw new Error('Eine Ziel-Lampe existiert nicht mehr. Bitte Ziel-Lampen neu wählen.');
+    if (lamp.type !== 'wled' && target.segment_mode === 'selected') throw new Error(`Segment-Auswahl gibt es nur für WLED-Lampen (${lamp.name}).`);
+    if (lamp.type !== 'wled') continue;
+    const segmentCount = Math.max(1, Number(lamp.metadata?.segment_count || 1));
+    if (target.segment_mode === 'selected') {
+      if (!target.segment_ids.length) throw new Error(`Bitte wähle mindestens ein Segment für ${lamp.name}.`);
+      if (target.segment_ids.some((segmentId) => segmentId < 0 || segmentId >= segmentCount)) throw new Error(`Segment-Auswahl für ${lamp.name} liegt außerhalb von 0 bis ${segmentCount - 1}.`);
+      const colorMap = new Map((target.segment_colors || []).map((entry) => [Number(entry.segment_id), entry.color]));
+      target.segment_colors = target.segment_ids.map((segmentId) => ({ segment_id: segmentId, color: colorMap.get(segmentId) || target.color || '#9147ff' }));
+    } else {
+      target.segment_ids = [];
+      target.segment_colors = [];
+    }
+  }
 }
 
 function validateOnlineRulePayload(payload) {
@@ -89,6 +120,7 @@ function validateOnlineRulePayload(payload) {
   const targets = sanitizeTargets(payload.targets);
   if (!streamerId) throw new Error('Bitte wähle einen Streamer aus.');
   if (targets.length === 0) throw new Error('Bitte aktiviere mindestens eine Lampe für diese Online-Szene.');
+  validateTargetSegments(targets);
   return { streamer_id: streamerId, enabled: payload.enabled !== false, targets };
 }
 
@@ -188,7 +220,7 @@ function applyImportPayload(payload, mode = 'replace') {
   const resolveTarget = (target) => {
     const lampId = target.lamp_id || lampMap.get(`${target.lamp_name || ''}|${target.lamp_address || ''}`) || null;
     if (!lampId || !db.getLamp(lampId)) return null;
-    return { lamp_id: lampId, mode: target.mode === 'effect' ? 'effect' : 'static', color: /^#[0-9a-f]{6}$/i.test(String(target.color || '')) ? String(target.color) : '#9147ff', secondary_color: /^#[0-9a-f]{6}$/i.test(String(target.secondary_color || '')) ? String(target.secondary_color) : '#ffffff', effect_name: target.effect_name == null ? '' : String(target.effect_name), effect_speed: clampByte(target.effect_speed), effect_intensity: clampByte(target.effect_intensity), rotation_seconds: clampRotationSeconds(target.rotation_seconds) };
+    return { lamp_id: lampId, mode: target.mode === 'effect' ? 'effect' : 'static', color: /^#[0-9a-f]{6}$/i.test(String(target.color || '')) ? String(target.color) : '#9147ff', secondary_color: /^#[0-9a-f]{6}$/i.test(String(target.secondary_color || '')) ? String(target.secondary_color) : '#ffffff', effect_name: target.effect_name == null ? '' : String(target.effect_name), effect_speed: clampByte(target.effect_speed), effect_intensity: clampByte(target.effect_intensity), rotation_seconds: clampRotationSeconds(target.rotation_seconds), segment_mode: target.segment_mode === 'selected' ? 'selected' : 'all', segment_ids: [...new Set((Array.isArray(target.segment_ids) ? target.segment_ids : []).map((value) => Math.max(0, Math.round(Number(value)))).filter((value) => Number.isFinite(value)))].sort((a, b) => a - b), segment_colors: sanitizeSegmentColors(target.segment_colors, /^#[0-9a-f]{6}$/i.test(String(target.color || '')) ? String(target.color) : '#9147ff') };
   };
   for (const rule of Array.isArray(payload.onlineRules) ? payload.onlineRules : []) {
     const streamer_id = streamerMap.get(String(rule.streamer_login || '').trim().toLowerCase()) || db.getAllStreamers().find((entry) => entry.login === String(rule.streamer_login || '').trim().toLowerCase())?.id;
@@ -288,7 +320,7 @@ function createApiRouter(effectManager, twitch) {
   router.delete('/lamps/:id', (req, res) => { db.deleteLamp(req.params.id); res.json({ success: true }); });
   router.post('/lamps/:id/refresh-effects', async (req, res) => { const result = await effectManager.refreshLampEffects(req.params.id); res.json({ success: !!result, result, lamp: db.getLamp(req.params.id) }); });
   router.post('/lamps/:id/diagnose', async (req, res) => { try { const result = await effectManager.diagnoseLamp(req.params.id); res.json({ success: true, result, lamp: db.getLamp(req.params.id) }); } catch (error) { res.status(400).json({ error: error.message }); } });
-  router.post('/lamps/:id/test', express.json(), async (req, res) => { const { action, color, secondary_color, effect_name, effect_speed, effect_intensity } = req.body; const ok = action === 'off' ? await effectManager.setLampOff(req.params.id) : action === 'effect' ? await effectManager.setLampEffect(req.params.id, effect_name, { speed: effect_speed, intensity: effect_intensity, primaryColor: color, secondaryColor: secondary_color }) : await effectManager.setLampColor(req.params.id, color || '#ffffff'); res.json({ success: ok }); });
+  router.post('/lamps/:id/test', express.json(), async (req, res) => { const { action, color, secondary_color, effect_name, effect_speed, effect_intensity, segment_mode, segment_ids, segment_colors } = req.body; const segmentOptions = { segment_mode: segment_mode === 'selected' ? 'selected' : 'all', segment_ids: Array.isArray(segment_ids) ? segment_ids : [], segment_colors: sanitizeSegmentColors(segment_colors, color || '#9147ff') }; const ok = action === 'off' ? await effectManager.setLampOff(req.params.id) : action === 'effect' ? await effectManager.setLampEffect(req.params.id, effect_name, { speed: effect_speed, intensity: effect_intensity, primaryColor: color, secondaryColor: secondary_color, ...segmentOptions }) : await effectManager.setLampColor(req.params.id, color || '#ffffff', segmentOptions); res.json({ success: ok }); });
 
   router.get('/streamers', (_req, res) => res.json(db.getAllStreamers()));
   router.post('/streamers', express.json(), async (req, res) => { try { const streamer = db.saveStreamer({ id: uuidv4(), ...validateStreamerPayload(req.body) }); await twitch.refreshChannels(); res.json({ success: true, streamer }); } catch (error) { res.status(400).json({ error: error.message }); } });

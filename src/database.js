@@ -286,7 +286,13 @@ function parseTargetsRule(row) {
   const targets = JSON.parse(row.targets_json || '[]').map((target) => ({
     ...target,
     secondary_color: /^#[0-9a-f]{6}$/i.test(String(target?.secondary_color || '')) ? String(target.secondary_color) : '#ffffff',
-    rotation_seconds: Math.max(5, Number(target?.rotation_seconds || fallbackRotation || 20))
+    rotation_seconds: Math.max(5, Number(target?.rotation_seconds || fallbackRotation || 20)),
+    segment_mode: target?.segment_mode === 'selected' ? 'selected' : 'all',
+    segment_ids: [...new Set((Array.isArray(target?.segment_ids) ? target.segment_ids : []).map((value) => Math.max(0, Math.round(Number(value)))).filter((value) => Number.isFinite(value)))].sort((a, b) => a - b),
+    segment_colors: (Array.isArray(target?.segment_colors) ? target.segment_colors : []).map((entry, index) => ({
+      segment_id: Math.max(0, Number.isFinite(Number(entry?.segment_id)) ? Math.round(Number(entry.segment_id)) : index),
+      color: /^#[0-9a-f]{6}$/i.test(String(entry?.color || '')) ? String(entry.color) : (/^#[0-9a-f]{6}$/i.test(String(target?.color || '')) ? String(target.color) : '#9147ff')
+    }))
   }));
   return { ...row, enabled: !!row.enabled, targets };
 }

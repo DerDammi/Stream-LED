@@ -1,4 +1,4 @@
-# Twitch Lamp Controller
+# Stream Lamp Controller
 
 Lokales Webinterface für WLED-, Govee- und Philips-Hue-Lampen mit Twitch-Anbindung.
 
@@ -33,6 +33,14 @@ Du kannst damit:
 - Import / Export der Konfiguration
 - HTTP und HTTPS (selbstsigniertes Zertifikat)
 
+
+## Was in V1.6.0 besser ist
+
+- **WLED-only Segment-Support**: WLED-Lampen können jetzt eine Segmentanzahl speichern und im UI bearbeiten
+- in **Live-Regeln und Chat-Regeln** kann man für WLED pro Ziel-Lampe wählen: **alle Segmente** oder **einzelne Segmente**
+- bei Auswahl einzelner Segmente lassen sich **eigene Farben pro Segment** vergeben
+- **Hue und Govee bleiben bewusst ohne Segment-UI**, damit bestehendes Verhalten klar und simpel bleibt
+- GUI-Branding wurde von **Twitch Lamp** auf **Stream Lamp** umgestellt
 
 ## Was in V1.5.1 besser ist
 
@@ -160,17 +168,17 @@ docker push derdammi/stream-led:latest
 ### Optional mit Version-Tag
 
 ```bash
-docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.5.1 .
+docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.0 .
 docker push derdammi/stream-led:latest
-docker push derdammi/stream-led:1.5.1
+docker push derdammi/stream-led:1.6.0
 ```
 
 Wenn du nach diesem Update sauber versionieren willst, ist der typische Release-Flow also:
 
 ```bash
-docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.5.1 .
+docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.0 .
 docker push derdammi/stream-led:latest
-docker push derdammi/stream-led:1.5.1
+docker push derdammi/stream-led:1.6.0
 ```
 
 ### Wichtige Hinweise
@@ -218,8 +226,9 @@ Danach im Webinterface einfach auf **Mit Twitch verbinden** klicken.
 
 ### WLED
 - IP oder Hostname eintragen, z. B. `192.168.1.50` oder `wled-kueche.local`
+- optional die **Segmentanzahl** pflegen, falls dein WLED mehrere Segmente hat
 - über **Diagnose** prüfst du direkt Erreichbarkeit und Effekt-Erkennung
-- über **Effekte neu laden** wird die Liste direkt aus WLED eingelesen
+- über **Effekte neu laden** wird die Liste direkt aus WLED eingelesen; vorhandene Segmente werden oft direkt erkannt
 - **Discovery** kann bekannte IPs direkt testen oder einen kleinen LAN-Bereich absuchen
 
 ### Govee
@@ -239,6 +248,7 @@ Danach im Webinterface einfach auf **Mit Twitch verbinden** klicken.
 - **Live-Look auf alle** bzw. **Hype-Look auf alle** als schneller Start
 - **Auf alle kopieren** pro Lampen-Zielkarte
 - **Jetzt testen** direkt aus der Zielkarten-Konfiguration
+- bei **WLED** zusätzlich: alle Segmente gemeinsam oder gezielte Segmente mit eigenen Farben
 - kompakte Zusammenfassung, wie viele Lampen gerade aktiv belegt sind
 
 ### Neuer Regel-Testmodus in V1.3

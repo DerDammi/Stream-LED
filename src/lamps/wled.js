@@ -12,6 +12,28 @@ function hexToRgb(hex, fallback = [255, 255, 255]) {
   ];
 }
 
+function buildSegments(lamp, opts = {}, mode = 'static') {
+  const segmentIds = opts.segment_mode === 'selected' && Array.isArray(opts.segment_ids) && opts.segment_ids.length
+    ? [...new Set(opts.segment_ids.map((value) => Math.max(0, Math.round(Number(value)))).filter((value) => Number.isFinite(value)))].sort((a, b) => a - b)
+    : [];
+  if (!segmentIds.length) {
+    if (mode === 'effect') {
+      const primary = hexToRgb(opts.primaryColor || opts.color || '#9147ff', [145, 71, 255]);
+      const secondary = hexToRgb(opts.secondaryColor || '#ffffff', [255, 255, 255]);
+      return [{ col: [primary, secondary], fx: Number.isFinite(Number(opts.effectId)) ? Number(opts.effectId) : opts.effectId, sx: opts.speed ?? 128, ix: opts.intensity ?? 128 }];
+    }
+    return [{ col: [[...hexToRgb(opts.color || '#ffffff')]], fx: 0 }];
+  }
+  const colorMap = new Map((Array.isArray(opts.segment_colors) ? opts.segment_colors : []).map((entry) => [Math.max(0, Math.round(Number(entry?.segment_id))), entry?.color]));
+  return segmentIds.map((segmentId) => {
+    const primary = hexToRgb(colorMap.get(segmentId) || opts.primaryColor || opts.color || '#9147ff', [145, 71, 255]);
+    const secondary = hexToRgb(opts.secondaryColor || '#ffffff', [255, 255, 255]);
+    return mode === 'effect'
+      ? { id: segmentId, col: [primary, secondary], fx: Number.isFinite(Number(opts.effectId)) ? Number(opts.effectId) : opts.effectId, sx: opts.speed ?? 128, ix: opts.intensity ?? 128 }
+      : { id: segmentId, col: [[...primary]], fx: 0 };
+  });
+}
+
 class WLEDController {
   async fetchInfo(address) {
     return new Promise((resolve, reject) => {
@@ -37,7 +59,7 @@ class WLEDController {
       const address = typeof lampOrAddress === 'string' ? lampOrAddress : lampOrAddress.address;
       const info = await this.fetchInfo(address);
       const effects = (info.effects || []).map((name, idx) => ({ id: idx, name }));
-      return { effects, info };
+      return { effects, info, segment_count: Array.isArray(info.state?.seg) && info.state.seg.length ? info.state.seg.length : 1 };
     } catch (error) {
       db.log('WARN', 'wled', error.message);
       return null;
@@ -58,6 +80,7 @@ class WLEDController {
           address,
           version: info.info.ver || null,
           effect_count: Array.isArray(info.effects) ? info.effects.length : 0,
+          segment_count: Array.isArray(info.state?.seg) && info.state.seg.length ? info.state.seg.length : 1,
           helper: 'WLED antwortet direkt auf /json – gute Chance, dass die Lampe sofort nutzbar ist.'
         });
       } catch {}
@@ -118,10 +141,7 @@ class WLEDController {
   }
 
   async setColor(lamp, color, opts = {}) {
-    const r = parseInt(color.slice(1, 3), 16);
-    const g = parseInt(color.slice(3, 5), 16);
-    const b = parseInt(color.slice(5, 7), 16);
-    const state = { on: true, bri: opts.brightness ?? 128, seg: [{ col: [[r, g, b]], fx: 0 }] };
+    const state = { on: true, bri: opts.brightness ?? 128, seg: buildSegments(lamp, { ...opts, color }, 'static') };
     try {
       await this.sendCommand(lamp.address, state);
       db.updateLampSeen(lamp.id, true);
@@ -134,9 +154,7 @@ class WLEDController {
 
   async setEffect(lamp, effectId, opts = {}) {
     const resolvedEffect = Number.isFinite(Number(effectId)) ? Number(effectId) : effectId;
-    const primary = hexToRgb(opts.primaryColor || opts.color || '#9147ff', [145, 71, 255]);
-    const secondary = hexToRgb(opts.secondaryColor || '#ffffff', [255, 255, 255]);
-    const state = { on: true, bri: opts.brightness ?? 128, seg: [{ fx: resolvedEffect, sx: opts.speed ?? 128, ix: opts.intensity ?? 128, col: [primary, secondary] }] };
+    const state = { on: true, bri: opts.brightness ?? 128, seg: buildSegments(lamp, { ...opts, effectId: resolvedEffect }, 'effect') };
     try {
       await this.sendCommand(lamp.address, state);
       db.updateLampSeen(lamp.id, true);

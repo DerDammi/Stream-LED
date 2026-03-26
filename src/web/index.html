@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Twitch Lamp Controller V1.5.1</title>
+  <title>Stream Lamp Controller V1.6.0</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -11,8 +11,8 @@
 
   <div id="setup-screen" class="screen hidden">
     <div class="setup-card">
-      <div class="badge">V1.5.1 · Docker-first</div>
-      <h1>Twitch Lamp Controller</h1>
+      <div class="badge">V1.6.0 · Docker-first</div>
+      <h1>Stream Lamp Controller</h1>
       <p class="subtitle">Noob-freundliches Setup für WLED, Govee, Philips Hue, Online-Szenen und chatgesteuerte Lampenregeln.</p>
       <div id="lamp-type-overview" class="support-row"></div>
 
@@ -44,8 +44,8 @@
   <div id="app" class="screen hidden">
     <aside class="sidebar">
       <div>
-        <div class="logo">💡 Twitch Lamp</div>
-        <div class="badge small">V1.5.1</div>
+        <div class="logo">💡 Stream Lamp</div>
+        <div class="badge small">V1.6.0</div>
       </div>
       <nav>
         <a href="#" class="nav-link active" data-tab="dashboard">Dashboard</a>
@@ -186,6 +186,7 @@
           <label>API Key (nur wenn nötig)<input id="lamp-api-key"></label>
         </div>
         <div id="lamp-helper-box" class="preview-box small-box"></div>
+        <div id="wled-segment-box" class="preview-box small-box"><strong>WLED Segmente</strong><br>Wie viele Segmente hat diese Lampe aktuell?<br><label>Segmentanzahl<input id="lamp-segment-count" type="number" min="1" max="32" value="1"></label><div class="meta">Tipp: „Effekte neu laden“ oder Diagnose lesen die Anzahl aus WLED oft automatisch ein, aber du kannst sie hier auch manuell korrigieren.</div></div>
         <label class="inline"><input type="checkbox" id="lamp-enabled" checked> Aktiviert</label>
         <div id="hue-assistant-box" class="preview-box small-box hidden"><strong>Hue-Assistent</strong><br>1. Bridge-IP eintragen oder aus Discovery übernehmen.<br>2. Link-Button auf der Bridge drücken.<br>3. <em>Bridge koppeln</em> klicken.<br>4. Danach Lichter laden und eines auswählen.<div class="actions-row compact-top"><button type="button" class="btn btn-secondary" id="hue-pair-btn">Bridge koppeln</button><button type="button" class="btn btn-secondary" id="hue-load-lights-btn">Lichter laden</button><select id="hue-light-select"><option value="">Bitte Licht wählen</option></select></div><div id="hue-assistant-result" class="meta spaced-top">Noch keine Hue-Kopplung gestartet.</div></div>
         <div class="actions-row"><button class="btn btn-primary" type="submit">Speichern</button></div>
