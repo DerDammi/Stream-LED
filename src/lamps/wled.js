@@ -22,11 +22,10 @@ function buildSegments(lamp, opts = {}, mode = 'static') {
   const colorMap = new Map((Array.isArray(opts.segment_colors) ? opts.segment_colors : []).map((entry) => [Math.max(0, Math.round(Number(entry?.segment_id))), entry?.color]));
 
   if (!selectedMode || !segmentIds.length) {
-    if (mode === 'effect') {
-      const primary = hexToRgb(opts.primaryColor || opts.color || '#9147ff', [145, 71, 255]);
-      return [{ col: [primary], fx: Number.isFinite(Number(opts.effectId)) ? Number(opts.effectId) : opts.effectId, sx: opts.speed ?? 128, ix: opts.intensity ?? 128 }];
-    }
-    return [{ col: [[...hexToRgb(opts.color || '#ffffff')]], fx: 0 }];
+    const primary = hexToRgb(opts.primaryColor || opts.color || '#9147ff', [145, 71, 255]);
+    return allSegmentIds.map((segmentId) => (mode === 'effect'
+      ? { id: segmentId, on: true, col: [primary], fx: Number.isFinite(Number(opts.effectId)) ? Number(opts.effectId) : opts.effectId, sx: opts.speed ?? 128, ix: opts.intensity ?? 128 }
+      : { id: segmentId, on: true, col: [[...hexToRgb(opts.color || '#ffffff')]], fx: 0 }));
   }
 
   return allSegmentIds.map((segmentId) => {
@@ -147,7 +146,7 @@ class WLEDController {
   }
 
   async setColor(lamp, color, opts = {}) {
-    const state = { on: true, bri: opts.brightness ?? 128, seg: buildSegments(lamp, { ...opts, color }, 'static') };
+    const state = { on: true, live: false, bri: opts.brightness ?? 128, seg: buildSegments(lamp, { ...opts, color }, 'static') };
     try {
       await this.sendCommand(lamp.address, state);
       db.updateLampSeen(lamp.id, true);
@@ -160,7 +159,7 @@ class WLEDController {
 
   async setEffect(lamp, effectId, opts = {}) {
     const resolvedEffect = Number.isFinite(Number(effectId)) ? Number(effectId) : effectId;
-    const state = { on: true, bri: opts.brightness ?? 128, seg: buildSegments(lamp, { ...opts, effectId: resolvedEffect }, 'effect') };
+    const state = { on: true, live: false, bri: opts.brightness ?? 128, seg: buildSegments(lamp, { ...opts, effectId: resolvedEffect }, 'effect') };
     try {
       await this.sendCommand(lamp.address, state);
       db.updateLampSeen(lamp.id, true);
@@ -173,7 +172,7 @@ class WLEDController {
 
   async setOff(lamp) {
     try {
-      await this.sendCommand(lamp.address, { on: false });
+      await this.sendCommand(lamp.address, { on: false, live: false });
       return true;
     } catch (error) {
       db.log('ERROR', 'wled', error.message);

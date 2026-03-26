@@ -9,11 +9,14 @@ class EffectManager {
     this.govee = new GoveeController();
     this.hue = new HueController();
     this.healthTimer = null;
+    this.runtimeStateProvider = null;
     this.runtime = {
       activeOnlineStreamer: null,
       activeChatRuleId: null,
       activeChatRuleName: null,
       lampStates: new Map(),
+      desiredLampStates: new Map(),
+      testOverrides: new Map(),
       diagnostics: {
         lastHealthCheckAt: null,
         lastHealthCheckSuccessAt: null,
@@ -28,6 +31,8 @@ class EffectManager {
   }
 
   initialize() { this.startHealthChecks(); }
+  setRuntimeStateProvider(provider) { this.runtimeStateProvider = typeof provider === 'function' ? provider : null; }
+
   startHealthChecks() {
     if (this.healthTimer) clearInterval(this.healthTimer);
     const seconds = Math.max(10, db.getSetting('healthcheck_seconds', 30));
@@ -38,6 +43,101 @@ class EffectManager {
     if (type === 'govee') return this.govee;
     if (type === 'hue') return this.hue;
     return this.wled;
+  }
+
+  normalizeRuntimeTarget(target = {}) {
+    const usesSegmentColors = target.segment_mode === 'selected' && Array.isArray(target.segment_ids) && target.segment_ids.length > 0;
+    const segmentColors = Array.isArray(target.segment_colors) ? target.segment_colors : [];
+    return {
+      source: target.source,
+      mode: target.mode || 'static',
+      color: usesSegmentColors ? (segmentColors[0]?.color || '#9147ff') : (target.color || '#ffffff'),
+      color_overridden_by_segments: usesSegmentColors,
+      effect_name: target.effect_name || '',
+      effect_speed: Number(target.effect_speed || 128),
+      effect_intensity: Number(target.effect_intensity || 128),
+      rotation_seconds: Number(target.rotation_seconds || db.getSetting('rotation_seconds', 20) || 20),
+      streamer_login: target.streamer_login || null,
+      segment_mode: target.segment_mode === 'selected' ? 'selected' : 'all',
+      segment_ids: Array.isArray(target.segment_ids) ? target.segment_ids : [],
+      segment_colors: segmentColors
+    };
+  }
+
+  getActiveTestOverride(lampId) {
+    const current = this.runtime.testOverrides.get(lampId);
+    if (!current) return null;
+    if (current.expiresAt <= Date.now()) {
+      this.clearTemporaryLampOverride(lampId, { reapply: true }).catch(() => {});
+      return null;
+    }
+    return current;
+  }
+
+  async applyLampState(lamp, nextState) {
+    if (!lamp || !nextState) return false;
+    if (nextState.source === 'off' || nextState.source === 'test:off' || nextState.off === true) return this.getController(lamp.type).setOff(lamp);
+    if (nextState.mode === 'effect' && nextState.effect_name) {
+      return this.getController(lamp.type).setEffect(lamp, nextState.effect_name, {
+        speed: nextState.effect_speed,
+        intensity: nextState.effect_intensity,
+        primaryColor: nextState.color,
+        segment_mode: nextState.segment_mode,
+        segment_ids: nextState.segment_ids,
+        segment_colors: nextState.segment_colors
+      });
+    }
+    return this.getController(lamp.type).setColor(lamp, nextState.color, {
+      segment_mode: nextState.segment_mode,
+      segment_ids: nextState.segment_ids,
+      segment_colors: nextState.segment_colors
+    });
+  }
+
+  async setTemporaryLampOverride(lampId, nextState, options = {}) {
+    const lamp = db.getLamp(lampId);
+    if (!lamp) return false;
+    const durationMs = Math.max(1000, Number(options.durationMs || options.duration_ms || 10000));
+    const existing = this.runtime.testOverrides.get(lampId);
+    if (existing?.timer) clearTimeout(existing.timer);
+    const overrideState = { ...nextState, is_test_override: true, source: nextState.source || 'test' };
+    const timer = setTimeout(() => {
+      this.clearTemporaryLampOverride(lampId, { reapply: true }).catch(() => {});
+    }, durationMs);
+    this.runtime.testOverrides.set(lampId, { state: overrideState, expiresAt: Date.now() + durationMs, timer });
+    const ok = await this.applyLampState(lamp, overrideState);
+    if (ok) this.runtime.lampStates.set(lamp.id, overrideState);
+    return ok;
+  }
+
+  async clearTemporaryLampOverride(lampId, options = {}) {
+    const existing = this.runtime.testOverrides.get(lampId);
+    if (!existing) return false;
+    if (existing.timer) clearTimeout(existing.timer);
+    this.runtime.testOverrides.delete(lampId);
+    if (options.reapply === false) return true;
+    return this.reapplyCurrentRuntimeState({ lampId });
+  }
+
+  async reapplyCurrentRuntimeState(options = {}) {
+    const lampId = options.lampId || null;
+    if (this.runtimeStateProvider) {
+      const state = await this.runtimeStateProvider();
+      return this.applyResolvedState({ ...state, lampIdFilter: lampId ? new Set([lampId]) : null });
+    }
+    const lamp = lampId ? db.getLamp(lampId) : null;
+    if (lamp && this.runtime.desiredLampStates.has(lampId)) {
+      const desired = this.runtime.desiredLampStates.get(lampId);
+      const ok = await this.applyLampState(lamp, desired);
+      if (ok) this.runtime.lampStates.set(lamp.id, desired);
+      return ok;
+    }
+    if (lamp) {
+      const ok = await this.getController(lamp.type).setOff(lamp);
+      if (ok) this.runtime.lampStates.set(lamp.id, { source: 'off' });
+      return ok;
+    }
+    return false;
   }
 
   async discoverLamps(options = {}) {
@@ -153,7 +253,14 @@ class EffectManager {
     const lamps = db.getAllLamps();
     const output = {};
     for (const lamp of lamps) {
-      output[lamp.id] = { lamp, state: this.runtime.lampStates.get(lamp.id) || null, diagnostics: this.runtime.diagnostics.lampChecks.get(lamp.id) || null };
+      const testOverride = this.getActiveTestOverride(lamp.id);
+      output[lamp.id] = {
+        lamp,
+        state: this.runtime.lampStates.get(lamp.id) || null,
+        desiredState: this.runtime.desiredLampStates.get(lamp.id) || null,
+        testOverride: testOverride ? { ...testOverride.state, expiresAt: new Date(testOverride.expiresAt).toISOString() } : null,
+        diagnostics: this.runtime.diagnostics.lampChecks.get(lamp.id) || null
+      };
     }
     return output;
   }
@@ -207,8 +314,8 @@ class EffectManager {
     return { selected, candidates };
   }
 
-  async applyResolvedState({ onlineState, chatRule, dryRun = false }) {
-    const lamps = db.getAllLamps().filter((lamp) => lamp.enabled && lamp.last_seen);
+  async applyResolvedState({ onlineState, chatRule, dryRun = false, lampIdFilter = null }) {
+    const lamps = db.getAllLamps().filter((lamp) => lamp.enabled && (lamp.last_seen || (lampIdFilter && lampIdFilter.has(lamp.id))) && (!lampIdFilter || lampIdFilter.has(lamp.id)));
     const activeOnlineRules = Array.isArray(onlineState?.activeRules) ? onlineState.activeRules : [];
     const activeOnlineStreamers = [...new Set(activeOnlineRules.map((rule) => rule.streamer_login).filter(Boolean))];
     this.runtime.activeOnlineStreamer = activeOnlineStreamers.length ? activeOnlineStreamers.join(', ') : null;
@@ -234,6 +341,7 @@ class EffectManager {
     const conflicts = [];
     if (chatRule?.targets?.length) {
       for (const target of chatRule.targets) {
+        if (lampIdFilter && !lampIdFilter.has(target.lamp_id)) continue;
         const onlineCandidates = onlineCandidatesByLamp.get(target.lamp_id) || [];
         if (onlineCandidates.length) {
           const lamp = db.getLamp(target.lamp_id);
@@ -253,6 +361,12 @@ class EffectManager {
     for (const lamp of lamps) {
       const target = desired.get(lamp.id);
       if (!target) {
+        this.runtime.desiredLampStates.set(lamp.id, { source: 'off' });
+        const testOverride = this.getActiveTestOverride(lamp.id);
+        if (testOverride) {
+          actions.push({ lamp_id: lamp.id, lamp_name: lamp.name, action: 'test-override-active', nextState: testOverride.state });
+          continue;
+        }
         const prev = this.runtime.lampStates.get(lamp.id);
         if (prev?.source !== 'off') actions.push({ lamp_id: lamp.id, lamp_name: lamp.name, action: 'off', reason: 'keine aktive Szene oder Regel' });
         if (!dryRun && prev?.source !== 'off') {
@@ -261,22 +375,13 @@ class EffectManager {
         }
         continue;
       }
-      const usesSegmentColors = target.segment_mode === 'selected' && Array.isArray(target.segment_ids) && target.segment_ids.length > 0;
-      const segmentColors = Array.isArray(target.segment_colors) ? target.segment_colors : [];
-      const nextState = {
-        source: target.source,
-        mode: target.mode || 'static',
-        color: usesSegmentColors ? (segmentColors[0]?.color || '#9147ff') : (target.color || '#ffffff'),
-        color_overridden_by_segments: usesSegmentColors,
-        effect_name: target.effect_name || '',
-        effect_speed: Number(target.effect_speed || 128),
-        effect_intensity: Number(target.effect_intensity || 128),
-        rotation_seconds: Number(target.rotation_seconds || db.getSetting('rotation_seconds', 20) || 20),
-        streamer_login: target.streamer_login || null,
-        segment_mode: target.segment_mode === 'selected' ? 'selected' : 'all',
-        segment_ids: Array.isArray(target.segment_ids) ? target.segment_ids : [],
-        segment_colors: Array.isArray(target.segment_colors) ? target.segment_colors : []
-      };
+      const nextState = this.normalizeRuntimeTarget(target);
+      this.runtime.desiredLampStates.set(lamp.id, nextState);
+      const testOverride = this.getActiveTestOverride(lamp.id);
+      if (testOverride) {
+        actions.push({ lamp_id: lamp.id, lamp_name: lamp.name, action: 'test-override-active', nextState: testOverride.state, deferredState: nextState });
+        continue;
+      }
       const prev = this.runtime.lampStates.get(lamp.id);
       if (JSON.stringify(prev) === JSON.stringify(nextState)) {
         actions.push({ lamp_id: lamp.id, lamp_name: lamp.name, action: 'unchanged', nextState });
@@ -284,11 +389,7 @@ class EffectManager {
       }
       actions.push({ lamp_id: lamp.id, lamp_name: lamp.name, action: nextState.mode === 'effect' && nextState.effect_name ? 'effect' : 'color', nextState });
       if (dryRun) continue;
-      if (nextState.mode === 'effect' && nextState.effect_name) {
-        await this.getController(lamp.type).setEffect(lamp, nextState.effect_name, { speed: nextState.effect_speed, intensity: nextState.effect_intensity, primaryColor: nextState.color, segment_mode: nextState.segment_mode, segment_ids: nextState.segment_ids, segment_colors: nextState.segment_colors });
-      } else {
-        await this.getController(lamp.type).setColor(lamp, nextState.color, { segment_mode: nextState.segment_mode, segment_ids: nextState.segment_ids, segment_colors: nextState.segment_colors });
-      }
+      await this.applyLampState(lamp, nextState);
       this.runtime.lampStates.set(lamp.id, nextState);
     }
     this.runtime.diagnostics.lastApplyAt = new Date().toISOString();
@@ -300,7 +401,8 @@ class EffectManager {
       actions: actions.length,
       dryRun,
       perLampRotation: true,
-      liveOnlineRules: activeOnlineRules.length
+      liveOnlineRules: activeOnlineRules.length,
+      testOverrides: this.runtime.testOverrides.size
     };
     return {
       onlineRule: activeOnlineStreamers.length ? { streamer_login: activeOnlineStreamers.join(', '), streamer_logins: activeOnlineStreamers } : null,
@@ -316,18 +418,30 @@ class EffectManager {
     const lamp = db.getLamp(target.lamp_id);
     if (!lamp) throw new Error('Lampe für Vorschau nicht gefunden.');
     if (options.dryRun) return { lamp_id: lamp.id, lamp_name: lamp.name, dryRun: true, target };
-    if (target.mode === 'effect' && target.effect_name) {
-      await this.getController(lamp.type).setEffect(lamp, target.effect_name, { speed: target.effect_speed, intensity: target.effect_intensity, primaryColor: target.color, segment_mode: target.segment_mode, segment_ids: target.segment_ids, segment_colors: target.segment_colors });
-    } else {
-      await this.getController(lamp.type).setColor(lamp, target.color || '#ffffff', { segment_mode: target.segment_mode, segment_ids: target.segment_ids, segment_colors: target.segment_colors });
-    }
-    return { lamp_id: lamp.id, lamp_name: lamp.name, dryRun: false, target };
+    const state = this.normalizeRuntimeTarget({ ...target, source: options.source || 'test:preview' });
+    const ok = await this.setTemporaryLampOverride(lamp.id, state, options);
+    return { lamp_id: lamp.id, lamp_name: lamp.name, dryRun: false, target: state, expiresAt: new Date(Date.now() + Math.max(1000, Number(options.durationMs || options.duration_ms || 10000))).toISOString(), success: ok };
   }
 
-  async setLampColor(lampId, color, opts = {}) { const lamp = db.getLamp(lampId); if (!lamp) return false; return this.getController(lamp.type).setColor(lamp, color, opts); }
-  async setLampEffect(lampId, effectName, opts = {}) { const lamp = db.getLamp(lampId); if (!lamp) return false; return this.getController(lamp.type).setEffect(lamp, effectName, opts); }
-  async setLampOff(lampId) { const lamp = db.getLamp(lampId); if (!lamp) return false; return this.getController(lamp.type).setOff(lamp); }
-  destroy() { if (this.healthTimer) clearInterval(this.healthTimer); }
+  async setLampColor(lampId, color, opts = {}) {
+    return this.setTemporaryLampOverride(lampId, this.normalizeRuntimeTarget({ source: 'test:color', mode: 'static', color, segment_mode: opts.segment_mode, segment_ids: opts.segment_ids, segment_colors: opts.segment_colors }), opts);
+  }
+
+  async setLampEffect(lampId, effectName, opts = {}) {
+    return this.setTemporaryLampOverride(lampId, this.normalizeRuntimeTarget({ source: 'test:effect', mode: 'effect', color: opts.primaryColor, effect_name: effectName, effect_speed: opts.speed, effect_intensity: opts.intensity, segment_mode: opts.segment_mode, segment_ids: opts.segment_ids, segment_colors: opts.segment_colors }), opts);
+  }
+
+  async setLampOff(lampId, opts = {}) {
+    return this.setTemporaryLampOverride(lampId, { source: 'test:off', mode: 'static' }, opts);
+  }
+
+  destroy() {
+    if (this.healthTimer) clearInterval(this.healthTimer);
+    for (const override of this.runtime.testOverrides.values()) {
+      if (override?.timer) clearTimeout(override.timer);
+    }
+    this.runtime.testOverrides.clear();
+  }
 }
 
 module.exports = EffectManager;

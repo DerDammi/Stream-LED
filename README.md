@@ -34,6 +34,12 @@ Du kannst damit:
 - HTTP und HTTPS (selbstsigniertes Zertifikat)
 
 
+## Was in V1.6.2 besser ist
+
+- **WLED-Zustandswechsel robuster**: normale Farb-/Effektbefehle schicken Multi-Segment-Zustände jetzt explizit an alle Segmente und verlassen zusätzlich den WLED-Live-Modus sauber, damit bei Segmentwechseln oder Realtime-Resten keine falschen Farben hängen bleiben
+- **Kurztests sind jetzt echte temporäre Overrides**: Lampentests und „Jetzt testen“ überlagern den Live-/Chat-Zustand nur kurz, laufen standardmäßig nach rund 10 Sekunden aus und springen dann automatisch sauber zurück in den aktuellen Runtime-Zustand
+- **Tests stapeln nicht mehr endlos**: ein neuer Test ersetzt den alten Timer derselben Lampe statt immer weitere überlappende Testzustände aufzubauen
+
 ## Was in V1.6.1 besser ist
 
 - **WLED Segment-Priorität repariert**: Wenn einzelne Segmente gewählt sind, wird die normale Hauptfarbe jetzt klar überschrieben statt heimlich weiter als Fallback mitzuspielen
@@ -176,17 +182,17 @@ docker push derdammi/stream-led:latest
 ### Optional mit Version-Tag
 
 ```bash
-docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.1 .
+docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.2 .
 docker push derdammi/stream-led:latest
-docker push derdammi/stream-led:1.6.1
+docker push derdammi/stream-led:1.6.2
 ```
 
 Wenn du nach diesem Update sauber versionieren willst, ist der typische Release-Flow also:
 
 ```bash
-docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.1 .
+docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.2 .
 docker push derdammi/stream-led:latest
-docker push derdammi/stream-led:1.6.1
+docker push derdammi/stream-led:1.6.2
 ```
 
 ### Wichtige Hinweise

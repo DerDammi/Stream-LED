@@ -16,6 +16,7 @@ const HTTPS_CERT_FILE = process.env.HTTPS_CERT_FILE || path.join(__dirname, 'cer
 const app = express();
 const effectManager = new EffectManager();
 const twitch = new TwitchIntegration(effectManager);
+effectManager.setRuntimeStateProvider(() => ({ onlineState: twitch.getOnlineState(), chatRule: twitch.getActiveChatRule() }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
