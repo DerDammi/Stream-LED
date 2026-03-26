@@ -19,17 +19,15 @@ function buildSegments(lamp, opts = {}, mode = 'static') {
   if (!segmentIds.length) {
     if (mode === 'effect') {
       const primary = hexToRgb(opts.primaryColor || opts.color || '#9147ff', [145, 71, 255]);
-      const secondary = hexToRgb(opts.secondaryColor || '#ffffff', [255, 255, 255]);
-      return [{ col: [primary, secondary], fx: Number.isFinite(Number(opts.effectId)) ? Number(opts.effectId) : opts.effectId, sx: opts.speed ?? 128, ix: opts.intensity ?? 128 }];
+      return [{ col: [primary], fx: Number.isFinite(Number(opts.effectId)) ? Number(opts.effectId) : opts.effectId, sx: opts.speed ?? 128, ix: opts.intensity ?? 128 }];
     }
     return [{ col: [[...hexToRgb(opts.color || '#ffffff')]], fx: 0 }];
   }
   const colorMap = new Map((Array.isArray(opts.segment_colors) ? opts.segment_colors : []).map((entry) => [Math.max(0, Math.round(Number(entry?.segment_id))), entry?.color]));
   return segmentIds.map((segmentId) => {
     const primary = hexToRgb(colorMap.get(segmentId) || opts.primaryColor || opts.color || '#9147ff', [145, 71, 255]);
-    const secondary = hexToRgb(opts.secondaryColor || '#ffffff', [255, 255, 255]);
     return mode === 'effect'
-      ? { id: segmentId, col: [primary, secondary], fx: Number.isFinite(Number(opts.effectId)) ? Number(opts.effectId) : opts.effectId, sx: opts.speed ?? 128, ix: opts.intensity ?? 128 }
+      ? { id: segmentId, col: [primary], fx: Number.isFinite(Number(opts.effectId)) ? Number(opts.effectId) : opts.effectId, sx: opts.speed ?? 128, ix: opts.intensity ?? 128 }
       : { id: segmentId, col: [[...primary]], fx: 0 };
   });
 }

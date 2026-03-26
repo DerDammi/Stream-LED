@@ -14,7 +14,7 @@ Du kannst damit:
 - Streamer anlegen
 - pro Streamer festlegen, **welche Lampen** genutzt werden
 - pro zugewiesener Lampe festlegen:
-  - Farbe
+  - Primärfarbe
   - Effekt
   - Rotationszeit
 - Chat-Regeln anlegen, die die normale Live-Anzeige überschreiben
@@ -39,6 +39,7 @@ Du kannst damit:
 - **WLED-only Segment-Support**: WLED-Lampen können jetzt eine Segmentanzahl speichern und im UI bearbeiten
 - in **Live-Regeln und Chat-Regeln** kann man für WLED pro Ziel-Lampe wählen: **alle Segmente** oder **einzelne Segmente**
 - bei Auswahl einzelner Segmente lassen sich **eigene Farben pro Segment** vergeben
+- die frühere **Sekundärfarbe** wurde wieder entfernt, damit Segmentfarben und Effekt-Setup nicht gegeneinander arbeiten
 - **Hue und Govee bleiben bewusst ohne Segment-UI**, damit bestehendes Verhalten klar und simpel bleibt
 - GUI-Branding wurde von **Twitch Lamp** auf **Stream Lamp** umgestellt
 
@@ -227,6 +228,7 @@ Danach im Webinterface einfach auf **Mit Twitch verbinden** klicken.
 ### WLED
 - IP oder Hostname eintragen, z. B. `192.168.1.50` oder `wled-kueche.local`
 - optional die **Segmentanzahl** pflegen, falls dein WLED mehrere Segmente hat
+- Effekte nutzen jetzt wieder nur eine Hauptfarbe; falls du einzelne Segmente auswählst, kommen deren Farben aus der Segment-Auswahl
 - über **Diagnose** prüfst du direkt Erreichbarkeit und Effekt-Erkennung
 - über **Effekte neu laden** wird die Liste direkt aus WLED eingelesen; vorhandene Segmente werden oft direkt erkannt
 - **Discovery** kann bekannte IPs direkt testen oder einen kleinen LAN-Bereich absuchen
