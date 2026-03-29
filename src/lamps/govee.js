@@ -92,6 +92,23 @@ class GoveeController {
     return this._mergeDeviceInfo(lamp, lanInfo, cloudInfo);
   }
 
+  async lookupByInput({ address = '', apiKey = null, deviceId = null, model = null, name = null } = {}) {
+    const lamp = {
+      id: 'lookup',
+      name: name || 'Govee',
+      type: 'govee',
+      address: trimOrNull(address) || '',
+      api_key: trimOrNull(apiKey),
+      metadata: {
+        lan_address: trimOrNull(address),
+        govee_device_id: trimOrNull(deviceId),
+        govee_model: trimOrNull(model),
+        govee_device_name: trimOrNull(name)
+      }
+    };
+    return this.getDeviceInfo(lamp);
+  }
+
   async setColor(lamp, color) {
     const r = parseInt(color.slice(1, 3), 16);
     const g = parseInt(color.slice(3, 5), 16);

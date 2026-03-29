@@ -334,6 +334,32 @@ function createApiRouter(effectManager, twitch) {
     } catch (error) { res.status(400).json({ error: error.message }); }
   });
 
+  router.post('/discover/govee/lookup', express.json(), async (req, res) => {
+    try {
+      const address = normalizeAddress(req.body.address || req.body.lan_address || '');
+      const apiKey = String(req.body.api_key || '').trim() || null;
+      const deviceId = String(req.body.device_id || req.body.govee_device_id || '').trim() || null;
+      const model = String(req.body.model || req.body.govee_model || '').trim() || null;
+      const name = String(req.body.name || req.body.govee_device_name || '').trim() || null;
+      if (!address && !deviceId) throw new Error('Bitte mindestens eine Govee-IP/Adresse oder Device ID angeben.');
+      const info = await effectManager.govee.lookupByInput({ address, apiKey, deviceId, model, name });
+      if (!info) return res.status(404).json({ error: 'Keine Govee-Daten gefunden. Prüfe IP/Hostname, API-Key und ob das Gerät erreichbar ist.' });
+      res.json({
+        success: true,
+        result: {
+          lan_address: info.lanAddress || address || null,
+          govee_device_id: info.deviceId || deviceId || null,
+          govee_model: info.model || model || null,
+          govee_sku: info.sku || info.model || model || null,
+          govee_device_name: info.deviceName || name || null,
+          retrieved_via: info.retrievedVia || null,
+          supports_lan: !!info.supportsLan,
+          cloud_capable: !!info.cloudCapable
+        }
+      });
+    } catch (error) { res.status(400).json({ error: error.message }); }
+  });
+
   router.get('/lamps', (_req, res) => res.json(db.getAllLamps()));
   router.post('/lamps', express.json(), async (req, res) => {
     try {

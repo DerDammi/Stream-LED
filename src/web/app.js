@@ -164,6 +164,9 @@ function bindForms() {
   byId('import-config-input').addEventListener('change', importConfig);
   byId('lamp-type').addEventListener('change', () => { renderLampWizardHelp(); renderHueAssistant(); });
   byId('lamp-address').addEventListener('input', handleLampAddressHelper);
+  byId('lamp-govee-lan-address')?.addEventListener('change', autoLookupGoveeMetadata);
+  byId('lamp-address')?.addEventListener('change', autoLookupGoveeMetadata);
+  byId('govee-lookup-btn')?.addEventListener('click', autoLookupGoveeMetadata);
   byId('hue-pair-btn')?.addEventListener('click', pairHueBridge);
   byId('hue-load-lights-btn')?.addEventListener('click', loadHueLights);
   byId('apply-chat-assistant-btn')?.addEventListener('click', applyChatAssistant);
@@ -331,6 +334,7 @@ window.editLamp = function(id) {
   if (byId('lamp-govee-device-id')) byId('lamp-govee-device-id').value = lamp.metadata?.govee_device_id || '';
   if (byId('lamp-govee-model')) byId('lamp-govee-model').value = lamp.metadata?.govee_model || lamp.metadata?.govee_sku || '';
   if (byId('lamp-govee-device-name')) byId('lamp-govee-device-name').value = lamp.metadata?.govee_device_name || lamp.name || '';
+  if (byId('govee-lookup-result')) byId('govee-lookup-result').textContent = lamp.type === 'govee' ? `Gespeichert: Device ID ${lamp.metadata?.govee_device_id || '-'} · Model ${lamp.metadata?.govee_model || lamp.metadata?.govee_sku || '-'}${lamp.metadata?.lan_address ? ` · LAN ${lamp.metadata.lan_address}` : ''}` : 'Noch kein Govee-Lookup gestartet.';
   if (byId('lamp-segment-count')) byId('lamp-segment-count').value = Math.max(1, Number(lamp.metadata?.segment_count || 1));
   if (lamp.type === 'hue') { const select = byId('hue-light-select'); if (select) select.innerHTML = `<option value="${escapeHtml(lamp.metadata?.light_id || lamp.address.split('/')[1] || '')}" selected>${escapeHtml(lamp.name)}</option>`; }
   byId('lamp-enabled').checked = lamp.enabled;
@@ -772,6 +776,39 @@ function handleLampAddressHelper() {
   }
 }
 
+async function autoLookupGoveeMetadata() {
+  if (byId('lamp-type')?.value !== 'govee') return;
+  const address = byId('lamp-govee-lan-address')?.value?.trim() || byId('lamp-address')?.value?.trim() || '';
+  const api_key = byId('lamp-api-key')?.value?.trim() || '';
+  const device_id = byId('lamp-govee-device-id')?.value?.trim() || '';
+  const model = byId('lamp-govee-model')?.value?.trim() || '';
+  const name = byId('lamp-govee-device-name')?.value?.trim() || byId('lamp-name')?.value?.trim() || '';
+  const box = byId('govee-lookup-result');
+  if (!address && !device_id) {
+    if (box) box.textContent = 'Bitte zuerst LAN-IP/Hostname oder Device ID eintragen.';
+    return;
+  }
+  try {
+    if (box) box.textContent = 'Lade Govee-Daten …';
+    const data = await api('/discover/govee/lookup', {
+      method: 'POST',
+      body: JSON.stringify({ address, api_key, device_id, model, name })
+    });
+    const result = data.result || {};
+    if (byId('lamp-govee-lan-address') && result.lan_address) byId('lamp-govee-lan-address').value = result.lan_address;
+    if (byId('lamp-address') && result.lan_address) byId('lamp-address').value = result.lan_address;
+    if (byId('lamp-govee-device-id') && result.govee_device_id) byId('lamp-govee-device-id').value = result.govee_device_id;
+    if (byId('lamp-govee-model') && result.govee_model) byId('lamp-govee-model').value = result.govee_model;
+    if (byId('lamp-govee-device-name') && result.govee_device_name) byId('lamp-govee-device-name').value = result.govee_device_name;
+    if (byId('lamp-name') && !byId('lamp-name').value.trim() && result.govee_device_name) byId('lamp-name').value = result.govee_device_name;
+    if (box) box.textContent = `Gefunden über ${result.retrieved_via || 'Lookup'}: Device ID ${result.govee_device_id || '-'} · Model ${result.govee_model || '-'}${result.lan_address ? ` · LAN ${result.lan_address}` : ''}`;
+    toast('Govee-Daten geladen.');
+  } catch (error) {
+    if (box) box.textContent = error.message || 'Govee-Daten konnten nicht geladen werden.';
+    toast(error.message || 'Govee-Daten konnten nicht geladen werden.', true);
+  }
+}
+
 async function runHealthcheckNow() { await api('/diagnostics/healthcheck', { method: 'POST' }); toast('Healthcheck gestartet.'); await refreshAll(); }
 async function discoverLampsNow() {
   const address = byId('discovery-address')?.value?.trim();
@@ -845,7 +882,7 @@ async function importConfig(event) {
 }
 
 window.deleteEntity = async function(endpoint) { if (!confirm('Wirklich löschen?')) return; await api(endpoint, { method: 'DELETE' }); toast('Eintrag gelöscht.'); await refreshAll(); };
-function resetLampForm() { byId('lamp-form').reset(); byId('lamp-id').value = ''; byId('lamp-enabled').checked = true; byId('lamp-type').value = 'wled'; if (byId('lamp-segment-count')) byId('lamp-segment-count').value = 1; if (byId('lamp-govee-lan-address')) byId('lamp-govee-lan-address').value = ''; if (byId('lamp-govee-device-id')) byId('lamp-govee-device-id').value = ''; if (byId('lamp-govee-model')) byId('lamp-govee-model').value = ''; if (byId('lamp-govee-device-name')) byId('lamp-govee-device-name').value = ''; byId('lamp-diagnostics-box').textContent = 'Noch keine Diagnose gelaufen.'; const select = byId('hue-light-select'); if (select) select.innerHTML = '<option value=>Bitte Licht wählen</option>'; const result = byId('hue-assistant-result'); if (result) result.textContent = 'Noch keine Hue-Kopplung gestartet.'; renderLampWizardHelp(); renderHueAssistant(); }
+function resetLampForm() { byId('lamp-form').reset(); byId('lamp-id').value = ''; byId('lamp-enabled').checked = true; byId('lamp-type').value = 'wled'; if (byId('lamp-segment-count')) byId('lamp-segment-count').value = 1; if (byId('lamp-govee-lan-address')) byId('lamp-govee-lan-address').value = ''; if (byId('lamp-govee-device-id')) byId('lamp-govee-device-id').value = ''; if (byId('lamp-govee-model')) byId('lamp-govee-model').value = ''; if (byId('lamp-govee-device-name')) byId('lamp-govee-device-name').value = ''; if (byId('govee-lookup-result')) byId('govee-lookup-result').textContent = 'Noch kein Govee-Lookup gestartet.'; byId('lamp-diagnostics-box').textContent = 'Noch keine Diagnose gelaufen.'; const select = byId('hue-light-select'); if (select) select.innerHTML = '<option value=>Bitte Licht wählen</option>'; const result = byId('hue-assistant-result'); if (result) result.textContent = 'Noch keine Hue-Kopplung gestartet.'; renderLampWizardHelp(); renderHueAssistant(); }
 function resetStreamerForm() { byId('streamer-form').reset(); byId('streamer-id').value = ''; byId('streamer-enabled').checked = true; }
 function resetOnlineRuleForm() { byId('online-rule-form').reset(); byId('online-rule-id').value = ''; byId('online-rule-enabled').checked = true; byId('online-rule-preset').value = ''; fillStreamerSelects(); renderTargets('online-rule-targets'); updateTargetSummary('online-rule-targets', 'online-target-summary'); }
 function resetChatRuleForm() { byId('chat-rule-form').reset(); byId('chat-rule-id').value = ''; byId('chat-rule-window').value = 10; byId('chat-rule-min').value = 5; byId('chat-rule-enabled').checked = true; byId('chat-rule-preset').value = ''; fillStreamerSelects(); renderTargets('chat-rule-targets'); updateTargetSummary('chat-rule-targets', 'chat-target-summary'); renderChatRulePreview(); byId('chat-assistant-result').textContent = 'Wähle kurz dein Ziel, dann fülle ich gute Startwerte ein.'; }
