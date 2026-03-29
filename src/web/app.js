@@ -726,7 +726,7 @@ function renderLampWizardHelp() {
   const content = type === 'wled'
     ? '<strong>WLED Schnellhilfe</strong><br>Trage am besten nur IP oder Hostname ein, z. B. <code>192.168.1.50</code> oder <code>wled-kueche.local</code>. Wenn dein WLED mehrere Segmente hat, trage unten die Segmentanzahl ein. Danach kannst du direkt „Diagnose“ und „Effekte neu laden“ nutzen.'
     : type === 'govee'
-      ? '<strong>Govee Schnellhilfe</strong><br>Für kompatible LAN-Modelle lokale IP/Hostname eintragen. Für Cloud-Steuerung brauchst du zusätzlich den echten <code>Device ID</code> plus <code>Model</code> aus Govee – Name oder IP reichen dort nicht. Eine kurze Preset-Liste ist bei Govee weiterhin normal.'
+      ? '<strong>Govee Schnellhilfe</strong><br>Im Projekt sinnvoll unterstützt werden vor allem kompatible LAN-Modelle. Lokale IP/Hostname eintragen und danach die Govee-Daten nachladen. Reine Cloud-only-Modelle sind aktuell nicht der empfohlene Weg.'
       : '<strong>Hue Schnellhilfe</strong><br>Am einfachsten unten im Hue-Assistenten: Bridge suchen, Link-Button drücken, koppeln, Licht auswählen, speichern. Adresse wird dabei automatisch gebaut.';
   box.innerHTML = content;
 }

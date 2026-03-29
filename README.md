@@ -1,6 +1,6 @@
 # Stream Lamp Controller
 
-Lokales Webinterface für WLED-, Govee- und Philips-Hue-Lampen mit Twitch-Anbindung.
+Lokales Webinterface für WLED-, Govee- (nur LAN-kompatible Modelle) und Philips-Hue-Lampen mit Twitch-Anbindung.
 
 ## Zusammenfassung
 
@@ -23,7 +23,7 @@ Du kannst damit:
 
 - Webinterface für lokale Nutzung
 - WLED Support
-- Govee Support
+- Govee Support (nur für LAN-kompatible Modelle sinnvoll)
 - Philips Hue Support (lokal, pragmatisch)
 - Twitch OAuth Login
 - Live-Erkennung für Streamer
@@ -247,11 +247,12 @@ Danach im Webinterface einfach auf **Mit Twitch verbinden** klicken.
 - **Discovery** kann bekannte IPs direkt testen oder einen kleinen LAN-Bereich absuchen
 
 ### Govee
-- für **LAN-Steuerung** die lokale IP oder den Hostnamen eintragen
-- für **Cloud-Steuerung** zusätzlich den echten **Device ID** und das **Model** hinterlegen; Name oder IP reichen für die Govee Cloud API nicht zuverlässig
-- wenn beides gepflegt ist, versucht die App lokal zu steuern und kann bei Bedarf sauber auf Cloud zurückfallen
-- lokale Govee-Effektlisten sind oft Preset-basiert; das ist im UI bewusst so erklärt
-- **Discovery** zeigt bei Govee jetzt kompakter und ehrlicher: LAN-Adresse, Device ID und Model
+- **Empfohlen und offiziell im Projekt unterstützt sind nur LAN-kompatible Govee-Modelle**
+- für diese Modelle die lokale IP oder den Hostnamen eintragen
+- das Tool kann danach Device ID und Model nachladen, soweit das Gerät/Discovery die Infos liefert
+- reine Cloud-only-Modelle sind in der Praxis unzuverlässiger und nicht der empfohlene Weg für dieses Projekt
+- lokale Govee-Effektlisten sind oft Preset-basiert; das ist normal
+- **Discovery** zeigt bei Govee kompakt: LAN-Adresse, Device ID und Model
 
 ### Philips Hue
 - V1.4 kann jetzt **Hue Bridges lokal koppeln** (Link-Button), **Hue-Lichter laden** und als echte Lampen importieren
