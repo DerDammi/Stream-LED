@@ -34,7 +34,7 @@ Du kannst damit:
 - HTTP und HTTPS (selbstsigniertes Zertifikat)
 
 
-## Was in V1.6.2 besser ist
+## Was in V1.6.3 besser ist
 
 - **WLED-Zustandswechsel robuster**: normale Farb-/Effektbefehle schicken Multi-Segment-Zustände jetzt explizit an alle Segmente und verlassen zusätzlich den WLED-Live-Modus sauber, damit bei Segmentwechseln oder Realtime-Resten keine falschen Farben hängen bleiben
 - **Kurztests sind jetzt echte temporäre Overrides**: Lampentests und „Jetzt testen“ überlagern den Live-/Chat-Zustand nur kurz, laufen standardmäßig nach rund 10 Sekunden aus und springen dann automatisch sauber zurück in den aktuellen Runtime-Zustand
@@ -182,17 +182,17 @@ docker push derdammi/stream-led:latest
 ### Optional mit Version-Tag
 
 ```bash
-docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.2 .
+docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.3 .
 docker push derdammi/stream-led:latest
-docker push derdammi/stream-led:1.6.2
+docker push derdammi/stream-led:1.6.3
 ```
 
 Wenn du nach diesem Update sauber versionieren willst, ist der typische Release-Flow also:
 
 ```bash
-docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.2 .
+docker build -t derdammi/stream-led:latest -t derdammi/stream-led:1.6.3 .
 docker push derdammi/stream-led:latest
-docker push derdammi/stream-led:1.6.2
+docker push derdammi/stream-led:1.6.3
 ```
 
 ### Wichtige Hinweise
@@ -247,10 +247,11 @@ Danach im Webinterface einfach auf **Mit Twitch verbinden** klicken.
 - **Discovery** kann bekannte IPs direkt testen oder einen kleinen LAN-Bereich absuchen
 
 ### Govee
-- IP/Adresse eintragen
-- falls dein Modell/API es braucht, zusätzlich API Key
+- für **LAN-Steuerung** die lokale IP oder den Hostnamen eintragen
+- für **Cloud-Steuerung** zusätzlich den echten **Device ID** und das **Model** hinterlegen; Name oder IP reichen für die Govee Cloud API nicht zuverlässig
+- wenn beides gepflegt ist, versucht die App lokal zu steuern und kann bei Bedarf sauber auf Cloud zurückfallen
 - lokale Govee-Effektlisten sind oft Preset-basiert; das ist im UI bewusst so erklärt
-- **Discovery** lauscht auf Govee-LAN-Antworten und zeigt gefundene Geräte kompakt an
+- **Discovery** zeigt bei Govee jetzt kompakter und ehrlicher: LAN-Adresse, Device ID und Model
 
 ### Philips Hue
 - V1.4 kann jetzt **Hue Bridges lokal koppeln** (Link-Button), **Hue-Lichter laden** und als echte Lampen importieren

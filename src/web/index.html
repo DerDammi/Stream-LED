@@ -45,7 +45,7 @@
     <aside class="sidebar">
       <div>
         <div class="logo">💡 Stream Lamp</div>
-        <div class="badge small">V1.6.1</div>
+        <div class="badge small">V1.6.3</div>
       </div>
       <nav>
         <a href="#" class="nav-link active" data-tab="dashboard">Dashboard</a>
@@ -182,10 +182,11 @@
         <div class="form-grid">
           <label>Name<input id="lamp-name" required></label>
           <label>Typ<select id="lamp-type"><option value="wled">WLED</option><option value="govee">Govee</option><option value="hue">Philips Hue</option></select></label>
-          <label>Adresse / IP<input id="lamp-address" required placeholder="192.168.1.50 oder wled-kueche.local"></label>
+          <label id="lamp-address-label">Adresse / IP<input id="lamp-address" required placeholder="192.168.1.50 oder wled-kueche.local"></label>
           <label>API Key (nur wenn nötig)<input id="lamp-api-key"></label>
         </div>
         <div id="lamp-helper-box" class="preview-box small-box"></div>
+        <div id="govee-config-box" class="preview-box small-box hidden"><strong>Govee Details</strong><br>Cloud-Steuerung braucht den echten <em>Device ID</em> + <em>Model</em>. Die LAN-Adresse ist optional zusätzlich für lokale Steuerung kompatibler Modelle.<div class="form-grid compact-top"><label>LAN IP / Hostname (optional)<input id="lamp-govee-lan-address" placeholder="192.168.1.77"></label><label>Device ID (Cloud)<input id="lamp-govee-device-id" placeholder="aa:bb:cc:dd:ee:ff:11:22"></label><label>Model / SKU<input id="lamp-govee-model" placeholder="H61A0"></label><label>Anzeigename / Gerätename<input id="lamp-govee-device-name" placeholder="Living Room Lamp"></label></div><div class="meta spaced-top">Tipp: Discovery oder vorhandene Cloud-Daten sollten Device ID und Model liefern. Name oder IP allein reichen für die Govee Cloud API nicht sauber aus.</div></div>
         <div id="wled-segment-box" class="preview-box small-box"><strong>WLED Segmente</strong><br>Wie viele Segmente hat diese Lampe aktuell?<br><label>Segmentanzahl<input id="lamp-segment-count" type="number" min="1" max="32" value="1"></label><div class="meta">Tipp: „Effekte neu laden“ oder Diagnose lesen die Anzahl aus WLED oft automatisch ein, aber du kannst sie hier auch manuell korrigieren.</div></div>
         <label class="inline"><input type="checkbox" id="lamp-enabled" checked> Aktiviert</label>
         <div id="hue-assistant-box" class="preview-box small-box hidden"><strong>Hue-Assistent</strong><br>1. Bridge-IP eintragen oder aus Discovery übernehmen.<br>2. Link-Button auf der Bridge drücken.<br>3. <em>Bridge koppeln</em> klicken.<br>4. Danach Lichter laden und eines auswählen.<div class="actions-row compact-top"><button type="button" class="btn btn-secondary" id="hue-pair-btn">Bridge koppeln</button><button type="button" class="btn btn-secondary" id="hue-load-lights-btn">Lichter laden</button><select id="hue-light-select"><option value="">Bitte Licht wählen</option></select></div><div id="hue-assistant-result" class="meta spaced-top">Noch keine Hue-Kopplung gestartet.</div></div>

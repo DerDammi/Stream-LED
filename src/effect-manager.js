@@ -174,7 +174,7 @@ class EffectManager {
     this.runtime.diagnostics.lastHealthCheckAt = new Date().toISOString();
     for (const lamp of lamps) {
       try {
-        const online = await this.getController(lamp.type).ping(lamp.address, lamp.api_key);
+        const online = await this.getController(lamp.type).ping(lamp.address, lamp.api_key, lamp);
         const now = new Date().toISOString();
         const previous = this.runtime.diagnostics.lampChecks.get(lamp.id);
         const wasOnline = !!lamp.last_seen;
@@ -212,7 +212,7 @@ class EffectManager {
     const lamp = db.getLamp(lampId);
     if (!lamp) throw new Error('Lampe nicht gefunden.');
     const controller = this.getController(lamp.type);
-    const pingOk = await controller.ping(lamp.address, lamp.api_key).catch(() => false);
+    const pingOk = await controller.ping(lamp.address, lamp.api_key, lamp).catch(() => false);
     db.updateLampSeen(lamp.id, pingOk);
     let effectRefresh = null;
     let refreshError = null;
@@ -233,7 +233,7 @@ class EffectManager {
         : (lamp.type === 'wled'
           ? 'Nicht erreichbar. Prüfe IP/Hostname, ob WLED im gleichen Netz hängt und ob http://IP/json im Browser geht.'
           : lamp.type === 'govee'
-            ? 'Nicht erreichbar. Prüfe IP/Device-ID, gleiches LAN und ggf. API-Key/LAN-Control in der Govee-App.'
+            ? 'Nicht erreichbar. Prüfe LAN-IP/Hostname, ob das Modell LAN-Control unterstützt, und für Cloud bitte API-Key + Device ID + Model.'
             : 'Nicht erreichbar. Prüfe Bridge-IP, LAN und ob die Hue Bridge eingeschaltet ist.')
     };
     this.runtime.diagnostics.lampChecks.set(lamp.id, {

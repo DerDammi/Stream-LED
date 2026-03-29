@@ -51,6 +51,7 @@ function validateLampPayload(payload, existingId = null) {
   const api_key = String(payload.api_key || '').trim() || null;
   const metadata = payload && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata) ? payload.metadata : {};
   let address = normalizeAddress(payload.address);
+  const trimValue = (value) => String(value || '').trim() || null;
 
   if (type === 'hue') {
     const bridgeIp = normalizeAddress(metadata.bridge_ip || payload.bridge_ip || address.split('/')[0]);
@@ -61,11 +62,39 @@ function validateLampPayload(payload, existingId = null) {
     address = `${bridgeIp}/${lightId}`;
   }
 
+  if (type === 'govee') {
+    const lanAddress = normalizeAddress(metadata.lan_address || payload.lan_address || address);
+    const deviceId = trimValue(metadata.govee_device_id || metadata.device_id || payload.govee_device_id || payload.device_id);
+    const model = trimValue(metadata.govee_model || metadata.model || payload.govee_model || payload.model);
+    const sku = trimValue(metadata.govee_sku || metadata.sku || payload.govee_sku || payload.sku);
+    const deviceName = trimValue(metadata.govee_device_name || metadata.device_name || payload.govee_device_name || payload.device_name || name);
+    const hasLan = !!lanAddress;
+    const hasCloud = !!(api_key && deviceId && model);
+    if (!hasLan && !hasCloud) throw new Error('Für Govee bitte entweder eine LAN-IP/Adresse eintragen oder API-Key + Device ID + Model hinterlegen.');
+    if (hasLan && !/^[a-z0-9.-]+$/i.test(lanAddress) && !/^(\d{1,3}\.){3}\d{1,3}$/.test(lanAddress)) throw new Error('Govee LAN-Adresse sieht unplausibel aus. Bitte Hostname oder IP eintragen.');
+    if (api_key && (!deviceId || !model) && !hasLan) throw new Error('Für reine Govee-Cloud-Steuerung werden API-Key, Device ID und Model benötigt.');
+    address = lanAddress || deviceId;
+    metadata.govee_device_id = deviceId;
+    metadata.govee_model = model;
+    metadata.govee_sku = sku || model;
+    metadata.govee_device_name = deviceName;
+    metadata.lan_address = lanAddress || null;
+    metadata.govee_supports_lan = hasLan;
+    metadata.govee_cloud_capable = !!api_key;
+  }
+
   if (!name) throw new Error('Bitte gib der Lampe einen Namen.');
   if (!address) throw new Error('Bitte trage IP, Hostname oder Geräteadresse ein.');
   if (type === 'wled' && !/^[a-z0-9.-]+$/i.test(address)) throw new Error('WLED-Adresse sieht unplausibel aus. Bitte nur Hostname oder IP eintragen.');
-  if (type === 'govee' && !api_key && !/^(\d{1,3}\.){3}\d{1,3}$/.test(address)) throw new Error('Für Govee ohne API-Key bitte eine lokale IP-Adresse eintragen.');
-  const duplicate = db.getAllLamps().find((lamp) => lamp.id !== existingId && lamp.address === address && lamp.type === type);
+  const duplicate = db.getAllLamps().find((lamp) => {
+    if (lamp.id === existingId || lamp.type !== type) return false;
+    if (type === 'govee') {
+      const sameLan = metadata.lan_address && lamp.metadata?.lan_address && lamp.metadata.lan_address === metadata.lan_address;
+      const sameCloud = metadata.govee_device_id && lamp.metadata?.govee_device_id && lamp.metadata.govee_device_id === metadata.govee_device_id;
+      return sameLan || sameCloud;
+    }
+    return lamp.address === address;
+  });
   if (duplicate) throw new Error(`Diese Lampe existiert schon: ${duplicate.name}`);
   const segment_count = Math.max(1, Math.min(32, Math.round(Number(metadata.segment_count ?? payload.segment_count ?? 1) || 1)));
   return { name, type, address, api_key, enabled: payload.enabled !== false, metadata: { ...metadata, bridge_ip: type === 'hue' ? address.split('/')[0] : metadata.bridge_ip || null, light_id: type === 'hue' ? address.split('/')[1] : metadata.light_id || null, segment_count: type === 'wled' ? segment_count : null } };
@@ -261,7 +290,7 @@ function createApiRouter(effectManager, twitch) {
 
   router.get('/meta/support', (_req, res) => res.json({ lampTypes: [
     { id: 'wled', name: 'WLED', status: 'supported', helper: 'Am einfachsten per IP/Hostname. Effektliste kann direkt aus WLED geladen werden.' },
-    { id: 'govee', name: 'Govee', status: 'supported', helper: 'LAN-Modelle lokal per IP, alternativ mit API-Key. Effektliste ist oft eine Preset-Liste.' },
+    { id: 'govee', name: 'Govee', status: 'supported', helper: 'LAN-Modelle lokal per IP/Hostname. Für Cloud-Steuerung sauber mit API-Key + Device ID + Model. Effektliste ist oft eine Preset-Liste.' },
     { id: 'hue', name: 'Philips Hue', status: 'supported-local', helper: 'V1.4 kann jetzt Hue Bridges lokal koppeln, Lichter importieren und Farbe/Ein-Aus direkt steuern.' }
   ] }));
 

@@ -34,7 +34,7 @@ const rotationLabel = (target) => `${Math.max(5, Number(target?.rotation_seconds
 window.openModal = (id) => document.getElementById(id).classList.remove('hidden');
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
 window.openLampModal = () => { resetLampForm(); openModal('lamp-modal'); renderLampWizardHelp(); renderHueAssistant(); };
-window.useDiscoveryLamp = function(type, address, name) { byId('lamp-type').value = type; byId('lamp-address').value = address; if (!byId('lamp-name').value) byId('lamp-name').value = name || ''; renderLampWizardHelp(); renderHueAssistant(); openModal('lamp-modal'); };
+window.useDiscoveryLamp = function(type, address, name, metadata = null) { byId('lamp-type').value = type; byId('lamp-address').value = address; if (!byId('lamp-name').value) byId('lamp-name').value = name || ''; if (type === 'govee' && metadata) { byId('lamp-govee-lan-address').value = metadata.lan_address || address || ''; byId('lamp-govee-device-id').value = metadata.govee_device_id || ''; byId('lamp-govee-model').value = metadata.govee_model || metadata.govee_sku || ''; byId('lamp-govee-device-name').value = metadata.govee_device_name || name || ''; } renderLampWizardHelp(); renderHueAssistant(); openModal('lamp-modal'); };
 window.openStreamerModal = () => { resetStreamerForm(); openModal('streamer-modal'); };
 window.openOnlineRuleModal = () => { resetOnlineRuleForm(); openModal('online-rule-modal'); };
 window.openChatRuleModal = () => { resetChatRuleForm(); openModal('chat-rule-modal'); };
@@ -300,7 +300,7 @@ function renderLamps() {
       <div class="card comfort-card lamp-card">
         <div>
           <strong>${escapeHtml(lamp.name)}</strong>
-          <div class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${escapeHtml(lamp.address)} · ${(lamp.effects || []).length} Effekte${lamp.type === 'wled' ? ` · ${Number(lamp.metadata?.segment_count || 1)} Segmente` : ''} · ${lamp.last_seen ? 'online' : 'offline'}</div>
+          <div class="meta">${escapeHtml(lamp.type.toUpperCase())} · ${escapeHtml(lamp.type === 'govee' ? (lamp.metadata?.lan_address || lamp.address || '-') : lamp.address)}${lamp.type === 'govee' ? ` · Device ${escapeHtml(lamp.metadata?.govee_device_id || '-')}` : ''}${lamp.type === 'govee' ? ` · Model ${escapeHtml(lamp.metadata?.govee_model || lamp.metadata?.govee_sku || '-')}` : ''} · ${(lamp.effects || []).length} Effekte${lamp.type === 'wled' ? ` · ${Number(lamp.metadata?.segment_count || 1)} Segmente` : ''} · ${lamp.last_seen ? 'online' : 'offline'}</div>
           <div class="lamp-test-row">
             <button class="btn btn-secondary" onclick="testLamp('${lamp.id}')">Kurztest</button>
             <button class="btn btn-secondary" onclick="testLampOff('${lamp.id}')">Aus</button>
@@ -309,7 +309,7 @@ function renderLamps() {
           <div class="actions-row compact-top">
             <button class="btn btn-ghost" onclick="diagnoseLamp('${lamp.id}')">Diagnose</button>
             <button class="btn btn-ghost" onclick="refreshLampEffects('${lamp.id}')">Effekte neu laden</button>
-            <span class="meta">${lamp.type === 'wled' ? 'Tipp: WLED antwortet typischerweise unter /json.' : lamp.type === 'hue' ? 'Tipp: Hue lokal braucht Bridge-IP, Link-Button und einen Username.' : 'Tipp: Govee lokal braucht oft LAN-Control oder API-Key.'}</span>
+            <span class="meta">${lamp.type === 'wled' ? 'Tipp: WLED antwortet typischerweise unter /json.' : lamp.type === 'hue' ? 'Tipp: Hue lokal braucht Bridge-IP, Link-Button und einen Username.' : 'Tipp: Govee Cloud braucht API-Key + Device ID + Model. Für LAN zusätzlich die lokale IP eintragen.'}</span>
           </div>
         </div>
         <div class="actions">
@@ -325,8 +325,12 @@ window.editLamp = function(id) {
   byId('lamp-id').value = lamp.id;
   byId('lamp-name').value = lamp.name;
   byId('lamp-type').value = lamp.type;
-  byId('lamp-address').value = lamp.metadata?.bridge_ip || lamp.address;
+  byId('lamp-address').value = lamp.type === 'govee' ? (lamp.metadata?.lan_address || lamp.address || '') : (lamp.metadata?.bridge_ip || lamp.address);
   byId('lamp-api-key').value = lamp.api_key || '';
+  if (byId('lamp-govee-lan-address')) byId('lamp-govee-lan-address').value = lamp.metadata?.lan_address || lamp.address || '';
+  if (byId('lamp-govee-device-id')) byId('lamp-govee-device-id').value = lamp.metadata?.govee_device_id || '';
+  if (byId('lamp-govee-model')) byId('lamp-govee-model').value = lamp.metadata?.govee_model || lamp.metadata?.govee_sku || '';
+  if (byId('lamp-govee-device-name')) byId('lamp-govee-device-name').value = lamp.metadata?.govee_device_name || lamp.name || '';
   if (byId('lamp-segment-count')) byId('lamp-segment-count').value = Math.max(1, Number(lamp.metadata?.segment_count || 1));
   if (lamp.type === 'hue') { const select = byId('hue-light-select'); if (select) select.innerHTML = `<option value="${escapeHtml(lamp.metadata?.light_id || lamp.address.split('/')[1] || '')}" selected>${escapeHtml(lamp.name)}</option>`; }
   byId('lamp-enabled').checked = lamp.enabled;
@@ -339,7 +343,7 @@ window.testLampOff = async function(id) { await api(`/lamps/${id}/test`, { metho
 window.diagnoseLamp = async function(id) {
   const data = await api(`/lamps/${id}/diagnose`, { method: 'POST' });
   const result = data.result;
-  byId('lamp-diagnostics-box').innerHTML = `<strong>${escapeHtml(data.lamp.name)}</strong><br>${result.pingOk ? '✅ erreichbar' : '❌ nicht erreichbar'} · ${result.effectCount} Effekte/Presets erkannt<br>${escapeHtml(result.hint)}${result.refreshError ? `<br><span class="warn">Effekt-Refresh: ${escapeHtml(result.refreshError)}</span>` : ''}`;
+  byId('lamp-diagnostics-box').innerHTML = `<strong>${escapeHtml(data.lamp.name)}</strong><br>${result.pingOk ? '✅ erreichbar' : '❌ nicht erreichbar'} · ${result.effectCount} Effekte/Presets erkannt${result.info?.deviceId ? `<br>Device ID: <code>${escapeHtml(result.info.deviceId)}</code>` : ''}${result.info?.model ? ` · Model: <code>${escapeHtml(result.info.model)}</code>` : ''}${result.info?.lanAddress ? ` · LAN: <code>${escapeHtml(result.info.lanAddress)}</code>` : ''}<br>${escapeHtml(result.hint)}${result.refreshError ? `<br><span class="warn">Effekt-Refresh: ${escapeHtml(result.refreshError)}</span>` : ''}`;
   toast(result.pingOk ? 'Lampe antwortet.' : 'Lampe antwortet aktuell nicht.', !result.pingOk);
   await refreshAll();
 };
@@ -446,7 +450,7 @@ function renderSettings() {
     const devices = state.discoveries?.result?.devices || {};
     const groups = [
       ...(devices.wled || []).map((item) => `WLED · ${item.name} · ${item.address}`),
-      ...(devices.govee || []).map((item) => `Govee · ${item.name} · ${item.address}`),
+      ...(devices.govee || []).map((item) => `Govee · ${item.name} · LAN ${item.address || '-'} · Device ${item.deviceId || '-'} · Model ${item.model || item.sku || '-'}`),
       ...(devices.hue || []).map((item) => `Hue Bridge · ${item.address} · per Assistent koppelbar`)
     ];
     discoveryBox.innerHTML = groups.length ? groups.map((row) => `<div class="status-row"><span>•</span><span>${escapeHtml(row)}</span></div>`).join('') : 'Noch keine Discovery gelaufen.';
@@ -718,7 +722,7 @@ function renderLampWizardHelp() {
   const content = type === 'wled'
     ? '<strong>WLED Schnellhilfe</strong><br>Trage am besten nur IP oder Hostname ein, z. B. <code>192.168.1.50</code> oder <code>wled-kueche.local</code>. Wenn dein WLED mehrere Segmente hat, trage unten die Segmentanzahl ein. Danach kannst du direkt „Diagnose“ und „Effekte neu laden“ nutzen.'
     : type === 'govee'
-      ? '<strong>Govee Schnellhilfe</strong><br>Für lokale Steuerung meist IP eintragen. Falls dein Modell es braucht oder Cloud-Steuerung genutzt wird, zusätzlich den API-Key hinterlegen. Eine kurze Preset-Liste ist bei Govee normal.'
+      ? '<strong>Govee Schnellhilfe</strong><br>Für kompatible LAN-Modelle lokale IP/Hostname eintragen. Für Cloud-Steuerung brauchst du zusätzlich den echten <code>Device ID</code> plus <code>Model</code> aus Govee – Name oder IP reichen dort nicht. Eine kurze Preset-Liste ist bei Govee weiterhin normal.'
       : '<strong>Hue Schnellhilfe</strong><br>Am einfachsten unten im Hue-Assistenten: Bridge suchen, Link-Button drücken, koppeln, Licht auswählen, speichern. Adresse wird dabei automatisch gebaut.';
   box.innerHTML = content;
 }
@@ -731,6 +735,10 @@ function renderHueAssistant() {
   box.classList.toggle('hidden', type !== 'hue');
   const wledBox = byId('wled-segment-box');
   if (wledBox) wledBox.classList.toggle('hidden', type !== 'wled');
+  const goveeBox = byId('govee-config-box');
+  if (goveeBox) goveeBox.classList.toggle('hidden', type !== 'govee');
+  const addressLabel = byId('lamp-address-label');
+  if (addressLabel) addressLabel.firstChild.textContent = type === 'govee' ? 'Adresse / IP (LAN optional)' : 'Adresse / IP';
 }
 
 async function pairHueBridge() {
@@ -757,6 +765,11 @@ function handleLampAddressHelper() {
   if (!raw) return;
   if (type === 'wled') byId('lamp-address').value = raw.replace(/^https?:\/\//, '').replace(/\/json.*$/,'').replace(/\/$/, '');
   if (type === 'hue') byId('lamp-address').value = raw.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  if (type === 'govee') {
+    const normalized = raw.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    byId('lamp-address').value = normalized;
+    if (byId('lamp-govee-lan-address') && !byId('lamp-govee-lan-address').value.trim()) byId('lamp-govee-lan-address').value = normalized;
+  }
 }
 
 async function runHealthcheckNow() { await api('/diagnostics/healthcheck', { method: 'POST' }); toast('Healthcheck gestartet.'); await refreshAll(); }
@@ -783,6 +796,16 @@ async function saveLamp(e) {
   const type = byId('lamp-type').value;
   const id = byId('lamp-id').value;
   const payload = { name: byId('lamp-name').value.trim(), type, address: byId('lamp-address').value.trim(), api_key: byId('lamp-api-key').value.trim() || null, enabled: byId('lamp-enabled').checked, metadata: type === 'wled' ? { segment_count: Math.max(1, Number(byId('lamp-segment-count')?.value || 1)) } : {} };
+  if (type === 'govee') {
+    payload.metadata = {
+      govee_device_id: byId('lamp-govee-device-id')?.value?.trim() || null,
+      govee_model: byId('lamp-govee-model')?.value?.trim() || null,
+      govee_sku: byId('lamp-govee-model')?.value?.trim() || null,
+      govee_device_name: byId('lamp-govee-device-name')?.value?.trim() || payload.name || null,
+      lan_address: byId('lamp-govee-lan-address')?.value?.trim() || payload.address || null
+    };
+    payload.address = payload.metadata.lan_address || payload.metadata.govee_device_id || payload.address;
+  }
   if (type === 'hue') {
     const lightId = byId('hue-light-select').value;
     const lightName = byId('hue-light-select').selectedOptions?.[0]?.textContent || payload.name;
@@ -822,7 +845,7 @@ async function importConfig(event) {
 }
 
 window.deleteEntity = async function(endpoint) { if (!confirm('Wirklich löschen?')) return; await api(endpoint, { method: 'DELETE' }); toast('Eintrag gelöscht.'); await refreshAll(); };
-function resetLampForm() { byId('lamp-form').reset(); byId('lamp-id').value = ''; byId('lamp-enabled').checked = true; byId('lamp-type').value = 'wled'; if (byId('lamp-segment-count')) byId('lamp-segment-count').value = 1; byId('lamp-diagnostics-box').textContent = 'Noch keine Diagnose gelaufen.'; const select = byId('hue-light-select'); if (select) select.innerHTML = '<option value=>Bitte Licht wählen</option>'; const result = byId('hue-assistant-result'); if (result) result.textContent = 'Noch keine Hue-Kopplung gestartet.'; renderLampWizardHelp(); renderHueAssistant(); }
+function resetLampForm() { byId('lamp-form').reset(); byId('lamp-id').value = ''; byId('lamp-enabled').checked = true; byId('lamp-type').value = 'wled'; if (byId('lamp-segment-count')) byId('lamp-segment-count').value = 1; if (byId('lamp-govee-lan-address')) byId('lamp-govee-lan-address').value = ''; if (byId('lamp-govee-device-id')) byId('lamp-govee-device-id').value = ''; if (byId('lamp-govee-model')) byId('lamp-govee-model').value = ''; if (byId('lamp-govee-device-name')) byId('lamp-govee-device-name').value = ''; byId('lamp-diagnostics-box').textContent = 'Noch keine Diagnose gelaufen.'; const select = byId('hue-light-select'); if (select) select.innerHTML = '<option value=>Bitte Licht wählen</option>'; const result = byId('hue-assistant-result'); if (result) result.textContent = 'Noch keine Hue-Kopplung gestartet.'; renderLampWizardHelp(); renderHueAssistant(); }
 function resetStreamerForm() { byId('streamer-form').reset(); byId('streamer-id').value = ''; byId('streamer-enabled').checked = true; }
 function resetOnlineRuleForm() { byId('online-rule-form').reset(); byId('online-rule-id').value = ''; byId('online-rule-enabled').checked = true; byId('online-rule-preset').value = ''; fillStreamerSelects(); renderTargets('online-rule-targets'); updateTargetSummary('online-rule-targets', 'online-target-summary'); }
 function resetChatRuleForm() { byId('chat-rule-form').reset(); byId('chat-rule-id').value = ''; byId('chat-rule-window').value = 10; byId('chat-rule-min').value = 5; byId('chat-rule-enabled').checked = true; byId('chat-rule-preset').value = ''; fillStreamerSelects(); renderTargets('chat-rule-targets'); updateTargetSummary('chat-rule-targets', 'chat-target-summary'); renderChatRulePreview(); byId('chat-assistant-result').textContent = 'Wähle kurz dein Ziel, dann fülle ich gute Startwerte ein.'; }
